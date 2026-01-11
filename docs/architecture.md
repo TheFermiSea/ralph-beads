@@ -172,13 +172,22 @@ Prevents infinite retry loops where the agent burns API credits trying to fix an
 ### The Protocol
 
 ```
-Attempt 1: Try task → Fail → Log error → Retry
-Attempt 2: Try task → Fail → CIRCUIT BREAK
+Attempt 1: Try task → Fail → Log with structured format
+bd comments add <task-id> "[ATTEMPT:1] Failed: <error summary>"
 
-bd comment <task-id> "Stuck: <error summary>"
-bd label add <task-id> blocked
+Attempt 2: Try task → Fail → CIRCUIT BREAK
+bd comments add <task-id> "[ATTEMPT:2] Failed: <error summary>. CIRCUIT BREAKER TRIGGERED."
+bd update <task-id> --status=blocked   # Note: status, not label
 
 Next iteration: bd ready returns DIFFERENT task
+```
+
+**Important:** Use `--status=blocked`, not labels. The status field controls
+`bd ready` filtering; labels are just metadata.
+
+**Detecting previous failures:**
+```bash
+ATTEMPTS=$(bd comments list $TASK_ID | grep -c '\[ATTEMPT:')
 ```
 
 ### Why 2 Attempts?

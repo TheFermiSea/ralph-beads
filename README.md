@@ -21,6 +21,45 @@ Standard Ralph uses file-based state management:
 - `bd set-state` for mode transitions with audit trail
 - Full persistence across sessions
 
+## 5-Minute Quickstart
+
+**Prerequisites:** Claude Code CLI, beads, ralph-loop plugin
+
+```bash
+# 1. Install the plugin
+claude plugins install /path/to/ralph-beads
+
+# 2. Initialize beads in your project (if not already done)
+cd your-project
+bd init
+
+# 3. Start the daemon (recommended for performance)
+bd daemon start
+
+# 4. Run your first ralph-beads task
+/ralph-beads "Fix the login form validation bug"
+```
+
+That's it! Ralph-beads will:
+1. Create an epic with `ralph` label
+2. Auto-detect your test framework
+3. Start a ralph-loop to implement the fix
+4. Track progress in beads
+5. Commit changes when tests pass
+
+**For larger tasks, use planning mode:**
+```bash
+/ralph-beads --mode plan "Add user authentication with JWT"
+# Agent creates structured task plan with dependencies
+# Then: /ralph-beads --mode build --epic <id>
+```
+
+**Check progress anytime:**
+```bash
+/ralph-status              # Current epic status
+bd ready                   # What's next
+```
+
 ## Installation
 
 ### Prerequisites
@@ -203,6 +242,36 @@ OPTIONS:
 | Mode management | Separate prompt files | State dimensions |
 | Visualization | Manual inspection | `bd graph`, `bd activity` |
 | Multi-agent support | None | Gates, swarms (future) |
+
+## Common Gotchas
+
+### "bd: command not found"
+Beads CLI is not installed. Install from: https://github.com/steveyegge/beads
+
+### "No ralph epics found"
+You haven't started a ralph-beads session yet. Run:
+```bash
+/ralph-beads --mode plan "Your task description"
+```
+
+### Loop stops but epic isn't complete
+Check for blocked tasks:
+```bash
+bd list --parent=<epic-id> --status=blocked
+bd comments list <blocked-task-id>  # See why it's blocked
+```
+
+### Tasks not appearing in `bd ready`
+Tasks only appear when their dependencies are complete. Check the graph:
+```bash
+bd graph <epic-id>
+```
+
+### Molecule commands fail
+Molecule operations require direct DB access:
+```bash
+bd --no-daemon mol show <mol-id>    # Note the --no-daemon flag
+```
 
 ## Contributing
 

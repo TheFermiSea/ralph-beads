@@ -19,47 +19,86 @@ Gracefully cancel an active Ralph-Beads loop while preserving all state in beads
 
 ### Step 1: Identify Active Epic
 
-If `--epic <id>` provided, use that ID.
-Otherwise, look for `.claude/ralph-loop.local.md` to find active epic.
+**Priority order for finding epic:**
 
-### Step 2: Update Epic State
+1. If `--epic <id>` provided, use that ID
+2. Otherwise, check `.claude/ralph-loop.local.md` for active loop context
+3. Fallback: Find most recent in_progress ralph epic
 
 ```bash
-bd set-state <epic-id> mode=paused --reason "<reason or 'Cancelled by user'>"
-bd comments add <epic-id> "[CANCELLED] <reason>. Resume with: /ralph-beads --epic <epic-id>"
+# Option 1: Explicit ID
+if [ -n "$EPIC_ARG" ]; then
+  EPIC_ID="$EPIC_ARG"
+
+# Option 2: Active loop context file
+elif [ -f ".claude/ralph-loop.local.md" ]; then
+  # Extract epic ID from local context (format varies)
+  EPIC_ID=$(grep -oP 'Epic:\s*\K[a-z0-9-]+' .claude/ralph-loop.local.md 2>/dev/null | head -1)
+
+# Option 3: Fallback to most recent in_progress ralph epic
+else
+  EPIC_ID=$(bd list --type=epic --label=ralph --status=in_progress --json 2>/dev/null | \
+    jq -r 'sort_by(.updated // .created // "") | reverse | .[0].id // empty')
+fi
+
+# Validate we found something
+if [ -z "$EPIC_ID" ]; then
+  echo "ERROR: No active Ralph-Beads epic found."
+  echo "Provide an epic ID explicitly: /ralph-cancel --epic <id>"
+  echo "Or check: bd list --type=epic --label=ralph"
+  exit 1
+fi
+
+# Verify epic exists
+bd show $EPIC_ID >/dev/null 2>&1 || { echo "ERROR: Epic $EPIC_ID not found"; exit 1; }
 ```
 
-### Step 3: Cancel Ralph Loop
+### Step 2: Confirmation (Safety Check)
+
+Before cancelling, show what will be affected:
+
+```bash
+# Get epic details
+TITLE=$(bd show $EPIC_ID --json | jq -r '.title // "Untitled"')
+TOTAL=$(bd list --parent=$EPIC_ID --json 2>/dev/null | jq 'length // 0')
+COMPLETE=$(bd list --parent=$EPIC_ID --status=closed --json 2>/dev/null | jq 'length // 0')
+IN_PROG=$(bd list --parent=$EPIC_ID --status=in_progress --json 2>/dev/null | jq -r '.[0].title // empty')
+
+echo "About to cancel Ralph-Beads loop:"
+echo "  Epic: $EPIC_ID - $TITLE"
+echo "  Progress: $COMPLETE/$TOTAL tasks complete"
+[ -n "$IN_PROG" ] && echo "  In-progress task: $IN_PROG (will be preserved)"
+echo ""
+echo "This will pause the loop but preserve all state."
+```
+
+Use AskUserQuestion to confirm: "Proceed with cancellation?"
+
+### Step 3: Update Epic State
+
+```bash
+bd set-state $EPIC_ID mode=paused
+bd comments add $EPIC_ID "[CANCELLED] ${REASON:-Cancelled by user}. Resume with: /ralph-beads --epic $EPIC_ID"
+```
+
+### Step 4: Cancel Ralph Loop
 
 Use the Skill tool to invoke `ralph-loop:cancel-ralph`.
 
-### Step 4: Report In-Progress Task
+### Step 5: Report Cancellation
 
-Check for any task currently in_progress under this epic:
+Display confirmation with all details:
 
 ```bash
-bd list --parent=<epic-id> --status=in_progress --json
+echo "Cancelled Ralph-Beads loop."
+echo ""
+echo "Epic: $EPIC_ID - $TITLE"
+echo "Progress: $COMPLETE/$TOTAL tasks complete"
+[ -n "$IN_PROG" ] && echo "In-progress: $IN_PROG (preserved)"
+echo ""
+echo "Resume with: /ralph-beads --epic $EPIC_ID"
 ```
 
-If a task is in progress, note it for the confirmation message. **Do NOT change its status** - the task remains in_progress so work is not lost when resuming.
-
-### Step 5: Confirm Cancellation
-
-Display:
-- Epic ID and title
-- Current progress (tasks complete/total)
-- In-progress task (if any) - note that it was preserved
-- How to resume: `/ralph-beads --epic <epic-id>`
-
-Example output:
-```
-Cancelled Ralph-Beads loop.
-
-Epic: rb-xxx - Feature implementation
-Progress: 3/7 tasks complete (43%)
-In-progress: rb-yyy - Implement validation (preserved)
-
-Resume with: /ralph-beads --epic rb-xxx
-```
+**Note:** In-progress tasks are preserved - their status remains in_progress so work is not lost when resuming.
 
 $ARGUMENTS

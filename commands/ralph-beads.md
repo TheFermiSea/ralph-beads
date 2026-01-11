@@ -44,12 +44,14 @@ Parse the following from $ARGUMENTS:
 ### Step 1: Environment Check
 
 ```bash
-# Verify beads is ready
-bd info
+# Verify beads is ready (MUST succeed to continue)
+bd info || { echo "ERROR: Beads not initialized. Run 'bd init' first."; exit 1; }
 
-# Check if daemon running (recommended)
+# Check if daemon running (recommended but not required)
 bd daemon status || echo "Consider: bd daemon start (faster graph ops)"
 ```
+
+**If `bd info` fails:** Stop immediately. User must initialize beads with `bd init`.
 
 ### Step 2: Determine Mode & Defaults
 
@@ -69,22 +71,37 @@ bd daemon status || echo "Consider: bd daemon start (faster graph ops)"
 
 ```bash
 # Note: mol commands require --no-daemon for direct DB access
-bd --no-daemon mol show <id>           # Verify molecule exists
+# Verify molecule exists (MUST succeed)
+bd --no-daemon mol show <id> || { echo "ERROR: Molecule <id> not found"; exit 1; }
+
 bd --no-daemon mol progress <id>       # Check current progress
 bd --no-daemon mol current <id>        # Show current position
-# Get epic from molecule and ensure state is set
-EPIC_ID=$(bd --no-daemon mol show <id> --json | jq -r '.proto_id // .epic_id')
+
+# Get epic from molecule (validate JSON extraction)
+EPIC_ID=$(bd --no-daemon mol show <id> --json | jq -r '.proto_id // .epic_id // empty')
+[ -z "$EPIC_ID" ] && { echo "ERROR: Cannot determine epic from molecule"; exit 1; }
+
 bd set-state $EPIC_ID mode=building
 ```
+
+**If molecule not found:** Stop immediately. Check ID is correct with `bd list --type=molecule`.
 
 **If `--epic <id>` provided (resume or pour):**
 
 ```bash
-bd show <id>                           # Verify epic exists
-# For building mode, set state and pour into molecule:
+# Verify epic exists (MUST succeed)
+bd show <id> || { echo "ERROR: Epic <id> not found"; exit 1; }
+
+# For building mode, pour into molecule:
 bd set-state <id> mode=building
+
+# Pour epic into molecule (capture output)
 MOL_ID=$(bd --no-daemon mol pour <id>)
+[ -z "$MOL_ID" ] && { echo "ERROR: Failed to pour epic into molecule"; exit 1; }
+echo "Created molecule: $MOL_ID"
 ```
+
+**If epic not found:** Verify ID with `bd list --type=epic`.
 
 **Otherwise (new epic/proto):**
 
@@ -94,23 +111,60 @@ Detect epic type from task keywords:
 - Default → type=task
 
 ```bash
-# Create proto (template for molecule)
-bd create --type=epic --title="Proto: <task-summary>" --priority=<priority>
-bd label add <epic-id> ralph
-bd label add <epic-id> template
-bd set-state <epic-id> mode=planning
+# Create proto (template for molecule) - capture ID
+EPIC_ID=$(bd create --type=epic --title="Proto: <task-summary>" --priority=<priority> --json | jq -r '.id // empty')
+[ -z "$EPIC_ID" ] && { echo "ERROR: Failed to create epic"; exit 1; }
+echo "Created epic: $EPIC_ID"
+
+bd label add $EPIC_ID ralph
+bd label add $EPIC_ID template
+bd set-state $EPIC_ID mode=planning
 ```
+
+**If creation fails:** Check `bd info` to verify beads is functional.
 
 ### Step 4: Auto-Detect Test Framework
 
 ```bash
-# Detect from project files
-[ -f "Cargo.toml" ] && echo "framework:rust"
-[ -f "pyproject.toml" ] && echo "framework:python"
-[ -f "package.json" ] && echo "framework:node"
+# Detect framework and set test command
+FRAMEWORK=""
+TEST_CMD=""
 
-bd label add <epic-id> framework:<detected>
+if [ -f "Cargo.toml" ]; then
+  FRAMEWORK="rust"
+  # Prefer nextest if available
+  if command -v cargo-nextest &>/dev/null; then
+    TEST_CMD="cargo nextest run"
+  else
+    TEST_CMD="cargo test"
+  fi
+elif [ -f "pyproject.toml" ] || [ -f "setup.py" ]; then
+  FRAMEWORK="python"
+  # Prefer pytest if available
+  if command -v pytest &>/dev/null || [ -f "pytest.ini" ]; then
+    TEST_CMD="pytest"
+  else
+    TEST_CMD="python -m unittest discover"
+  fi
+elif [ -f "package.json" ]; then
+  FRAMEWORK="node"
+  # Check for test script in package.json
+  if grep -q '"test"' package.json 2>/dev/null; then
+    TEST_CMD="npm test"
+  else
+    TEST_CMD="echo 'No test script defined'"
+  fi
+fi
+
+# Label the epic with detected framework
+[ -n "$FRAMEWORK" ] && bd label add $EPIC_ID framework:$FRAMEWORK
+
+# Output detected configuration
+echo "Test framework: ${FRAMEWORK:-none}"
+echo "Test command: ${TEST_CMD:-none}"
 ```
+
+**Note:** The detected `TEST_CMD` should be used in the building prompt for running tests.
 
 ### Step 5: Dry-Run Check
 
@@ -126,6 +180,24 @@ Exit without invoking loop.
 ```
 --completion-promise '<promise>' --max-iterations <N> <prompt>
 ```
+
+**Concrete invocation example (Planning Mode):**
+
+```
+Skill tool call:
+  skill: "ralph-loop:ralph-loop"
+  args: "--completion-promise 'PLAN_READY' --max-iterations 5 'PLANNING MODE: Add JWT authentication\n\nEpic: ralph-beads-xyz\nPhase: Proto creation...'"
+```
+
+**Concrete invocation example (Building Mode):**
+
+```
+Skill tool call:
+  skill: "ralph-loop:ralph-loop"
+  args: "--completion-promise 'DONE' --max-iterations 20 'BUILDING MODE: Add JWT authentication\n\nMolecule: ralph-beads-mol-abc\nEpic: ralph-beads-xyz\nTest Framework: node...'"
+```
+
+**Completion promise format:** Output `<promise>PLAN_READY</promise>` or `<promise>DONE</promise>` exactly as shown (XML tags included) when criteria are met.
 
 ---
 
@@ -146,15 +218,17 @@ Do NOT implement code. Do NOT make commits.
 
 **1. FRESH CONTEXT LOAD:**
 ```bash
-bd prime
+bd prime || echo "bd prime unavailable, using direct queries"
 ```
 This is your source of truth. Do NOT rely on conversation memory.
-If bd prime fails, fall back to checking proto state directly (step 2).
 
-**2. Check proto state:**
+**2. Check proto state (REQUIRED - fallback if bd prime fails):**
 ```bash
-bd show <epic-id>
-bd comments <epic-id>
+# Verify epic still exists
+bd show <epic-id> || { echo "ERROR: Epic <epic-id> not found - may have been deleted"; exit 1; }
+
+# Review iteration history
+bd comments list <epic-id>
 ```
 
 **3. Study existing code (use subagents):**
@@ -184,9 +258,10 @@ Perform gap analysis:
 For each identified task:
 
 ```bash
-# Create task and set parent (bd q outputs just the ID for scripting)
-TASK_ID=$(bd q --type=task --priority=<1-4> "<task title>")
-bd update $TASK_ID --parent=<epic-id>
+# Create task with parent in single command
+TASK_ID=$(bd create --type=task --priority=<1-4> --parent=<epic-id> --title="<task title>" --json | jq -r '.id // empty')
+[ -z "$TASK_ID" ] && { echo "ERROR: Failed to create task"; continue; }
+echo "Created task: $TASK_ID"
 
 # Add acceptance criteria
 bd update $TASK_ID --body "$(cat <<'EOF'
@@ -197,7 +272,11 @@ EOF
 )"
 
 # Add dependency on previous task (for sequencing)
-bd dep add $TASK_ID $PREVIOUS_TASK_ID
+# Only if there's a previous task
+[ -n "$PREVIOUS_TASK_ID" ] && bd dep add $TASK_ID $PREVIOUS_TASK_ID
+
+# Track for next iteration
+PREVIOUS_TASK_ID=$TASK_ID
 ```
 
 **Task structure:**
@@ -219,14 +298,26 @@ bd comments add <epic-id> "[plan:N] Created T tasks. Gaps: <summary>. Next: <wha
 Output `<promise>PLAN_READY</promise>` ONLY when:
 - Gap analysis complete
 - All tasks created with acceptance criteria
-- Dependencies form valid DAG
+- Dependencies form valid DAG (verified below)
 - `bd list --parent=<epic-id>` shows complete structure
+
+**Validate dependency graph before completing:**
+```bash
+# Check for cycles or invalid structure
+bd graph <epic-id>
+
+# If cycles detected, fix with:
+# bd dep remove <task-id> <problematic-dep-id>
+
+# Verify task count and structure
+bd list --parent=<epic-id>
+```
 
 Then:
 ```bash
-bd label add <epic-id> ready
+# Use state machine (not labels) for workflow status
 bd set-state <epic-id> mode=ready_for_build
-bd comments add <epic-id> "[PROTO COMPLETE] T tasks defined. Pour with: /ralph-beads --mode build --epic <epic-id>"
+bd comments add <epic-id> "[PROTO COMPLETE] T tasks defined, DAG validated. Pour with: /ralph-beads --mode build --epic <epic-id>"
 ```
 ---END PLANNING PROMPT---
 
@@ -250,70 +341,137 @@ Ask beads: "What is the state of the world right now?"
 
 **1. FRESH CONTEXT LOAD:**
 ```bash
-bd prime
+bd prime || echo "bd prime unavailable, using direct queries"
 ```
-This replaces your memory. If bd prime fails, fall back to `bd ready` directly.
-Parse the output to understand:
-- Current position in workflow
-- What's complete
-- What's blocked
-- What's next
+This replaces your memory. Parse output to understand current state.
 
-**2. Get next unblocked task:**
+**2. Verify molecule exists:**
 ```bash
-bd ready --mol <mol-id> --limit 1
+bd --no-daemon mol show <mol-id> || { echo "ERROR: Molecule not found"; exit 1; }
+```
+
+**3. Get next unblocked task:**
+```bash
+NEXT_TASK=$(bd --no-daemon ready --mol <mol-id> --limit 1 --json | jq -r '.[0].id // empty')
 ```
 This returns the SINGLE next actionable task.
 Do NOT pick a different task. Trust the algorithm.
 
-**3. If no task returned:** Check if complete:
+**4. If no task returned (NEXT_TASK is empty):**
 ```bash
-bd mol progress <mol-id>
-```
-If 100% → output `<promise>DONE</promise>`
-If blocked tasks exist → report blockers
+# Check completion progress
+PROGRESS=$(bd --no-daemon mol progress <mol-id> --json | jq -r '.percent // 0')
 
-**4. Claim the task:**
+if [ "$PROGRESS" = "100" ]; then
+    echo "All tasks complete"
+    # → output <promise>DONE</promise>
+else
+    # Not complete but nothing ready - check for blockers
+    echo "Progress: ${PROGRESS}% - checking blockers..."
+    bd list --parent=<epic-id> --status=blocked
+    # Report what's blocking and why
+fi
+```
+
+**5. Claim the task:**
 ```bash
-bd update <task-id> --status=in_progress
+bd update $NEXT_TASK --status=in_progress || { echo "ERROR: Failed to claim task"; exit 1; }
 ```
 
-**5. Study relevant code (fresh every time):**
+**6. Study relevant code (fresh every time):**
 Use Task tool with `Explore` agent.
 **DON'T ASSUME NOT IMPLEMENTED** - verify before changing.
 
 ## Circuit Breaker (CRITICAL)
 
-Track failures mentally within iteration. If same task fails TWICE:
+**Failure tracking format:** Log each attempt with a structured comment:
 
 ```bash
-# Log the failure reason
-bd comments add <task-id> "Stuck after 2 attempts: <error summary>"
-# Set status to blocked (removes from bd ready results)
-bd update <task-id> --status=blocked
+# On first failure attempt
+bd comments add $NEXT_TASK "[ATTEMPT:1] Failed: <error summary>"
+
+# On second failure attempt - trigger circuit breaker
+bd comments add $NEXT_TASK "[ATTEMPT:2] Failed: <error summary>. CIRCUIT BREAKER TRIGGERED."
+bd update $NEXT_TASK --status=blocked
 ```
 
-On next iteration, `bd ready` will return a DIFFERENT task.
-This prevents infinite retry loops.
+**Detecting previous failures:** Check comment history at iteration start:
+
+```bash
+# Count previous failure attempts on this task
+ATTEMPTS=$(bd comments list $NEXT_TASK 2>/dev/null | grep -c '\[ATTEMPT:' || echo "0")
+
+# If already 1+ failures, next failure triggers circuit breaker
+if [ "$ATTEMPTS" -ge 1 ]; then
+  echo "WARNING: Task has $ATTEMPTS previous failure(s). One more will block it."
+fi
+```
+
+**Why this matters:** On next iteration, `bd ready` returns a DIFFERENT task.
+This prevents infinite retry loops on fundamentally broken tasks.
 
 **Important:** Use `--status=blocked`, not just a label. The status field
 controls `bd ready` filtering; labels are just metadata.
 
-## Ephemeral Tasks for Discovered Work
+**Unblocking tasks (after manual intervention):**
+```bash
+# See all blocked tasks
+bd list --parent=<epic-id> --status=blocked
 
-If you discover a small cleanup needed (e.g., "update .gitignore"):
+# Review what went wrong
+bd comments list <blocked-task-id>
+
+# Unblock after fixing the root cause
+bd update <blocked-task-id> --status=open
+bd comments add <blocked-task-id> "[UNBLOCKED] Fixed: <what was changed>"
+```
+
+## Ephemeral Tasks vs Wisps (Important Distinction)
+
+**Two different tools for discovered work:**
+
+| Concept | When to Use | Command |
+|---------|-------------|---------|
+| **Ephemeral Task** | Quick standalone work (1-2 minutes) | `bd create --ephemeral` |
+| **Wisp** | Mini-molecule from a proto | `bd mol wisp <proto-id>` |
+
+### Ephemeral Tasks
+
+For small cleanup discovered during building (e.g., "update .gitignore"):
 
 ```bash
 # Create ephemeral task (not synced to git)
-bd create --ephemeral --title="Update .gitignore"
+TASK_ID=$(bd create --ephemeral --title="Update .gitignore" --json | jq -r '.id')
 # Do the work
 # Close immediately
-bd close <task-id>
+bd close $TASK_ID
 # Continue with main task
 ```
 
-Ephemeral tasks create audit trail without cluttering the synced backlog.
-Note: `bd mol wisp <proto-id>` is for ephemeral molecules from protos, not ad-hoc tasks.
+Ephemeral tasks:
+- Create audit trail without cluttering synced backlog
+- Do NOT appear in `bd ready` (you handle them immediately)
+- Are local-only (not pushed to remote)
+
+### Wisps
+
+For substantial discovered work that needs its own molecule context:
+
+```bash
+# Create wisp from proto template
+WISP_ID=$(bd mol wisp <proto-id> --title="Refactor helper module")
+# Work within wisp context
+bd ready --mol $WISP_ID
+# Complete and squash
+bd mol squash $WISP_ID
+```
+
+Wisps:
+- Are ephemeral molecules with full task tracking
+- Inherit structure from a proto template
+- Can be burned without trace: `bd mol burn <wisp-id>`
+
+**Decision tree:** If it takes < 5 minutes → ephemeral task. If it needs multiple steps → wisp.
 
 ## Work Protocol
 
@@ -334,7 +492,7 @@ Note: `bd mol wisp <proto-id>` is for ephemeral molecules from protos, not ad-ho
 
 7. Close task on success:
    ```bash
-   bd close <task-id>
+   bd close $NEXT_TASK || echo "WARNING: Failed to close task"
    ```
    This automatically unblocks dependent tasks.
 
@@ -375,6 +533,39 @@ Do NOT close the epic. Preserve state:
 bd set-state <epic-id> mode=paused
 bd comments add <mol-id> "[PAUSED after N iterations] Progress: T%. Resume: /ralph-beads --mol <mol-id> --max-iterations 40"
 ```
+
+## Troubleshooting: No Tasks Available
+
+If `bd ready` returns empty but progress < 100%, diagnose the issue:
+
+**1. Check for blocked tasks:**
+```bash
+bd list --parent=<epic-id> --status=blocked
+```
+If found: Review blocker reasons in comments, consider unblocking manually.
+
+**2. Check for dependency cycles:**
+```bash
+bd graph <epic-id> | grep -i cycle
+```
+If found: Remove cyclic dependency with `bd dep remove`.
+
+**3. Check for missing tasks:**
+```bash
+bd list --parent=<epic-id> --status=open
+```
+Compare count with expected. Tasks may have been accidentally closed.
+
+**4. Check molecule sync:**
+```bash
+bd --no-daemon mol show <mol-id>
+```
+Verify molecule is linked to correct proto/epic.
+
+**Common fixes:**
+- Unblock task: `bd update <task-id> --status=open`
+- Remove bad dependency: `bd dep remove <task-id> <blocks-id>`
+- Reopen closed task: `bd reopen <task-id>`
 ---END BUILDING PROMPT---
 
 ---
