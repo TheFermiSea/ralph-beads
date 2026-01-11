@@ -70,6 +70,7 @@ This project uses **spec-kit as a development tool** (not a runtime dependency).
 - `specs/core-workflow.md` - Planning mode, building mode, state transitions
 - `specs/beads-integration.md` - Epic structure, task selection, dependencies
 - `specs/commands.md` - /ralph-beads, /ralph-status, /ralph-cancel
+- `specs/validation.md` - Blind validation, complexity detection, rejection handling
 
 ### Testing Changes
 
@@ -88,6 +89,58 @@ This project uses **spec-kit as a development tool** (not a runtime dependency).
    ```bash
    /ralph-beads --max-iterations 3 "Simple test task"
    ```
+
+### Zeroshot-Inspired Features (v0.2.0+)
+
+**Complexity Detection & Scaling:**
+
+Auto-detects task complexity and adjusts iterations accordingly:
+
+| Complexity | Plan Iter | Build Iter | Validation | Keywords |
+|------------|-----------|------------|------------|----------|
+| TRIVIAL | 2 | 5 | Skip | typo, comment, rename, spelling, whitespace |
+| SIMPLE | 3 | 10 | Skip | button, toggle, flag, remove unused |
+| STANDARD | 5 | 20 | Auto | (default) |
+| CRITICAL | 8 | 40 | Required | auth, security, payment, migration, credential |
+
+```bash
+# Auto-detect complexity
+/ralph-beads "Fix typo in README"  # → TRIVIAL
+
+# Override complexity
+/ralph-beads --complexity critical "Add simple toggle"  # → CRITICAL
+```
+
+**Blind Validation:**
+
+After task completion, spawns independent code-reviewer who only sees:
+- Acceptance criteria (from task body)
+- Git diff (not implementation reasoning)
+
+```bash
+# Force validation for simple tasks
+/ralph-beads --validate "Add button"
+
+# Skip validation for standard tasks (CRITICAL cannot skip)
+/ralph-beads --skip-validate "Refactor module"
+```
+
+**Worktree Isolation:**
+
+Execute building in isolated git worktree for safe parallel execution:
+
+```bash
+# Work in worktree
+/ralph-beads --worktree --mode build --epic <id>
+
+# Work in worktree + create PR on completion
+/ralph-beads --pr --mode build --epic <id>
+```
+
+Benefits:
+- Original branch untouched
+- Multiple molecules can run in parallel
+- Clean PR workflow with `--pr` flag
 
 ### Beads Commands Reference
 
