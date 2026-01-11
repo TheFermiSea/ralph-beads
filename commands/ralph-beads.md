@@ -1,6 +1,6 @@
 ---
 description: Deep beads-integrated Ralph loop with molecule-based workflow execution
-argument-hint: "[--mode plan|build] [--epic <id>] [--mol <id>] [--priority 0-4] [--max-iterations N] [--dry-run] <task>"
+argument-hint: "[--mode plan|build] [--epic <id>] [--mol <id>] [--priority 0-4] [--complexity <level>] [--validate|--skip-validate] [--worktree] [--pr] [--max-iterations N] [--dry-run] <task>"
 ---
 
 # Ralph-Beads: Stateless Intelligence, Stateful Graph
@@ -35,7 +35,12 @@ Parse the following from $ARGUMENTS:
 - `--epic <id>` - Resume existing beads epic (skip creation)
 - `--mol <id>` - Resume existing molecule (preferred over --epic)
 - `--priority <0-4>` - Epic priority (default: 2)
-- `--max-iterations <n>` - Maximum iterations (default: 5 for plan, 20 for build)
+- `--complexity <trivial|simple|standard|critical>` - Override auto-detected complexity
+- `--validate` - Force validation even for TRIVIAL/SIMPLE tasks
+- `--skip-validate` - Skip validation for STANDARD tasks (CRITICAL cannot skip)
+- `--worktree` - Execute in isolated git worktree for safe parallel execution
+- `--pr` - Create PR on completion (implies --worktree)
+- `--max-iterations <n>` - Maximum iterations (scaled by complexity if not specified)
 - `--dry-run` - Preview setup without executing
 - Everything else is the task description
 
