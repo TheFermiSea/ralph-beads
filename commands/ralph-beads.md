@@ -138,6 +138,53 @@ bd set-state $EPIC_ID mode=planning
 
 **If creation fails:** Check `bd info` to verify beads is functional.
 
+### Step 3.5: Worktree Setup (if --worktree or --pr)
+
+```bash
+# --pr implies --worktree
+[ "$PR_FLAG" = "true" ] && WORKTREE_FLAG="true"
+
+if [ "$WORKTREE_FLAG" = "true" ]; then
+  # Only for building mode with a molecule
+  if [ "$MODE" = "build" ] && [ -n "$MOL_ID" ]; then
+    BRANCH_NAME="molecule/$MOL_ID"
+    WORKTREE_PATH="../worktree-$MOL_ID"
+
+    # Create worktree (handle existing branch)
+    if git rev-parse --verify "$BRANCH_NAME" >/dev/null 2>&1; then
+      # Branch exists, checkout into worktree
+      git worktree add "$WORKTREE_PATH" "$BRANCH_NAME" || {
+        echo "ERROR: Failed to create worktree with existing branch"
+        exit 1
+      }
+    else
+      # Create new branch
+      git worktree add "$WORKTREE_PATH" -b "$BRANCH_NAME" || {
+        echo "ERROR: Failed to create worktree with new branch"
+        exit 1
+      }
+    fi
+
+    echo "Working in worktree: $WORKTREE_PATH"
+    echo "Branch: $BRANCH_NAME"
+
+    # Change to worktree directory
+    cd "$WORKTREE_PATH"
+
+    # Export for cleanup later
+    export WORKTREE_PATH="$WORKTREE_PATH"
+    export BRANCH_NAME="$BRANCH_NAME"
+  else
+    echo "WARNING: --worktree only applies in building mode with molecule"
+  fi
+fi
+```
+
+**Benefits of worktree isolation:**
+- Original branch untouched during work
+- Multiple molecules can run in parallel (different terminals)
+- Clean PR workflow with `--pr` flag
+
 ### Step 4: Auto-Detect Test Framework
 
 ```bash
