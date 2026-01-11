@@ -80,7 +80,7 @@ If `--verbose` flag is set, include iteration history:
 ```bash
 echo ""
 echo "=== Recent Iterations ==="
-bd comments list <epic-id> --limit=10
+bd comments <epic-id>
 ```
 
 ### Step 5: Dependency Graph

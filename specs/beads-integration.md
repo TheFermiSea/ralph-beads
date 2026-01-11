@@ -78,8 +78,8 @@ Each iteration is logged as a structured comment on the epic for observability a
 
 **Acceptance Criteria:**
 - [ ] Log format: `[iter:N] [task:id] [tests:P/F/S] [commits:N] Summary`
-- [ ] Logs added via `bd comments add <epic> --body "..."`
-- [ ] Logs queryable via `bd comments list <epic>`
+- [ ] Logs added via `bd comments add <epic> "..."`
+- [ ] Logs queryable via `bd comments <epic>`
 - [ ] Logs include timestamp (automatic from beads)
 - [ ] Logs survive context compaction
 

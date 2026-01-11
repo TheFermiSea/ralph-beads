@@ -154,7 +154,7 @@ If bd prime fails, fall back to checking proto state directly (step 2).
 **2. Check proto state:**
 ```bash
 bd show <epic-id>
-bd comments list <epic-id> --limit=5
+bd comments <epic-id>
 ```
 
 **3. Study existing code (use subagents):**

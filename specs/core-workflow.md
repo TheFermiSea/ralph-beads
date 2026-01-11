@@ -28,7 +28,7 @@ When invoked with `--mode plan`, ralph-beads creates a beads epic and enters a g
 - [ ] Dry run creates epic structure without execution
 - [ ] Epic contains properly sequenced child tasks
 - [ ] Task dependencies form valid DAG (no cycles)
-- [ ] Iteration logs are queryable via `bd comments list`
+- [ ] Iteration logs are queryable via `bd comments`
 
 ---
 
@@ -90,7 +90,7 @@ Sessions can resume work after interruption, compaction, or handoff.
 
 **Acceptance Criteria:**
 - [ ] `bd show <epic>` provides full context for resumption
-- [ ] `bd comments list <epic>` shows iteration history
+- [ ] `bd comments <epic>` shows iteration history
 - [ ] `bd ready --epic=<id>` shows remaining work
 - [ ] No external files needed beyond beads state
 - [ ] Works after context compaction (new Claude session)

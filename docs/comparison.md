@@ -93,12 +93,12 @@ No structured history. No timestamps. No metrics.
 **Ralph-Beads:**
 ```bash
 # Structured iteration logs
-bd comments add $EPIC --body "[iter:1] [task:bd-xyz] [tests:10/0/0] Setup complete"
-bd comments add $EPIC --body "[iter:2] [task:bd-abc] [tests:15/0/0] Validation done"
-bd comments add $EPIC --body "[iter:3] [task:bd-def] [tests:20/2/0] Error handling - 2 failing tests"
+bd comments add $EPIC "[iter:1] [task:bd-xyz] [tests:10/0/0] Setup complete"
+bd comments add $EPIC "[iter:2] [task:bd-abc] [tests:15/0/0] Validation done"
+bd comments add $EPIC "[iter:3] [task:bd-def] [tests:20/2/0] Error handling - 2 failing tests"
 
 # Query history
-bd comments list $EPIC
+bd comments $EPIC
 # Returns timestamped, searchable log
 
 # Built-in metrics
@@ -167,7 +167,7 @@ bd show $EPIC --events
 bd show $EPIC
 # Shows: task bd-xyz is in_progress
 
-bd comments list $EPIC --limit=1
+bd comments $EPIC
 # Shows: "[iter:5] Starting error handling..."
 
 # Continue from exact point
@@ -186,7 +186,7 @@ bd ready --epic=$EPIC
 ```bash
 # Everything is in beads
 bd show $EPIC --verbose
-bd comments list $EPIC
+bd comments $EPIC
 bd graph $EPIC
 
 # Other agent can pick up immediately
