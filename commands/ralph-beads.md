@@ -211,7 +211,7 @@ bd dep add $TASK_ID $PREVIOUS_TASK_ID
 At END of EVERY iteration:
 
 ```bash
-bd comments add <epic-id> --body "[plan:N] Created T tasks. Gaps: <summary>. Next: <what to analyze>"
+bd comments add <epic-id> "[plan:N] Created T tasks. Gaps: <summary>. Next: <what to analyze>"
 ```
 
 ## Completion Criteria
@@ -226,7 +226,7 @@ Then:
 ```bash
 bd label add <epic-id> ready
 bd set-state <epic-id> mode=ready_for_build
-bd comments add <epic-id> --body "[PROTO COMPLETE] T tasks defined. Pour with: /ralph-beads --mode build --epic <epic-id>"
+bd comments add <epic-id> "[PROTO COMPLETE] T tasks defined. Pour with: /ralph-beads --mode build --epic <epic-id>"
 ```
 ---END PLANNING PROMPT---
 
@@ -350,7 +350,7 @@ Note: `bd mol wisp <proto-id>` is for ephemeral molecules from protos, not ad-ho
 At END of EVERY iteration:
 
 ```bash
-bd comments add <mol-id> --body "[iter:N] [task:<task-id>] [status:<done|blocked|wip>] [tests:P/F/S] <summary>"
+bd comments add <mol-id> "[iter:N] [task:<task-id>] [status:<done|blocked|wip>] [tests:P/F/S] <summary>"
 ```
 
 ## Completion Criteria
@@ -373,7 +373,7 @@ Do NOT close the epic. Preserve state:
 
 ```bash
 bd set-state <epic-id> mode=paused
-bd comments add <mol-id> --body "[PAUSED after N iterations] Progress: T%. Resume: /ralph-beads --mol <mol-id> --max-iterations 40"
+bd comments add <mol-id> "[PAUSED after N iterations] Progress: T%. Resume: /ralph-beads --mol <mol-id> --max-iterations 40"
 ```
 ---END BUILDING PROMPT---
 

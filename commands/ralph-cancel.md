@@ -26,7 +26,7 @@ Otherwise, look for `.claude/ralph-loop.local.md` to find active epic.
 
 ```bash
 bd set-state <epic-id> mode=paused --reason "<reason or 'Cancelled by user'>"
-bd comments add <epic-id> --body "[CANCELLED] <reason>. Resume with: /ralph-beads --epic <epic-id>"
+bd comments add <epic-id> "[CANCELLED] <reason>. Resume with: /ralph-beads --epic <epic-id>"
 ```
 
 ### Step 3: Cancel Ralph Loop

@@ -125,7 +125,7 @@ bd set-state <id> mode=building
 bd state <id> mode
 
 # Progress tracking
-bd comments add <id> --body "..."
+bd comments add <id> "..."
 bd comments list <id>
 
 # Circuit breaker (after 2 failures on same task)
@@ -164,7 +164,7 @@ bd update $NEXT --status=in_progress
 
 **Logging iteration:**
 ```bash
-bd comments add $EPIC --body "[iter:$N] [task:$TASK] [tests:$PASS/$FAIL/$SKIP] Summary: $MSG"
+bd comments add $EPIC "[iter:$N] [task:$TASK] [tests:$PASS/$FAIL/$SKIP] Summary: $MSG"
 ```
 
 ## File Structure
