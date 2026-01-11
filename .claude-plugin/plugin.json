@@ -1,0 +1,25 @@
+{
+  "name": "ralph-beads",
+  "description": "Deep beads-integrated Ralph loops for AI-supervised iterative development. Uses beads as the execution control plane for task decomposition, sequencing, and progress tracking.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Brian Squires",
+    "url": "https://github.com/briansquires"
+  },
+  "repository": "https://github.com/briansquires/ralph-beads",
+  "license": "MIT",
+  "keywords": [
+    "ralph",
+    "beads",
+    "ai-workflow",
+    "iterative-development",
+    "task-management",
+    "autonomous-coding"
+  ],
+  "dependencies": {
+    "plugins": [
+      "beads",
+      "ralph-loop"
+    ]
+  }
+}

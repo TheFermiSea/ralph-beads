@@ -1,0 +1,36 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.sublime-*
+
+# Claude Code local state
+.claude/ralph-loop.local.md
+
+# Test artifacts
+test-output/
+*.log
+
+# Build artifacts
+dist/
+build/
+
+# Node (if using any JS tooling)
+node_modules/
+
+# Python (if using any Python tooling)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Local development
+.env
+.env.local
+*.local.md
