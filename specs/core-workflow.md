@@ -102,14 +102,68 @@ Sessions can resume work after interruption, compaction, or handoff.
 
 ---
 
+### REQ-005: Complexity Detection & Scaling
+
+**Priority:** P2
+**Status:** draft
+
+Task complexity is auto-detected from keywords and used to scale iterations.
+
+**Complexity Levels:**
+| Level | Plan Iter | Build Iter | Validation | Keywords |
+|-------|-----------|------------|------------|----------|
+| TRIVIAL | 2 | 5 | Skip | typo, comment, rename, spelling, whitespace |
+| SIMPLE | 3 | 10 | Skip | button, toggle, flag, remove unused |
+| STANDARD | 5 | 20 | Auto | (default) |
+| CRITICAL | 8 | 40 | Required | auth, security, payment, migration, credential |
+
+**Acceptance Criteria:**
+- [ ] Complexity auto-detected from task description keywords
+- [ ] `--complexity <level>` overrides auto-detection
+- [ ] Max iterations scaled based on complexity (if not explicit)
+- [ ] Epic labeled with `complexity:<level>`
+- [ ] Validation phase enabled/required based on complexity (see specs/validation.md)
+
+**Tests:**
+- [ ] "fix typo" detects as TRIVIAL with 5 build iterations
+- [ ] "add auth migration" detects as CRITICAL with 40 build iterations
+- [ ] Explicit `--max-iterations` overrides scaling
+- [ ] Explicit `--complexity` overrides auto-detection
+
+---
+
+### REQ-006: Worktree Isolation
+
+**Priority:** P3
+**Status:** draft
+
+Building mode can execute in isolated git worktree for safe parallel execution.
+
+**Acceptance Criteria:**
+- [ ] `--worktree` creates worktree at `../worktree-$MOL_ID`
+- [ ] `--worktree` creates branch `molecule/$MOL_ID`
+- [ ] `--pr` implies `--worktree` (auto-enable)
+- [ ] `--pr` pushes branch and creates PR on completion
+- [ ] Worktree cleaned up after molecule completion
+
+**Tests:**
+- [ ] Worktree created in correct location
+- [ ] Original branch unchanged during work
+- [ ] PR created with molecule info in body
+- [ ] Worktree removed after completion
+
+---
+
 ## Dependencies
 
 - beads CLI (`bd`) must be installed and initialized
 - ralph-loop plugin for iteration control
 - Git repository for commit tracking
+- `gh` CLI for PR creation (optional, for `--pr` flag)
 
 ## Notes
 
 - Planning mode emphasizes exploration over implementation
 - Building mode emphasizes execution over exploration
 - Both modes use structured logging for observability
+- See `specs/validation.md` for blind validation requirements (REQ-040/041/042)
