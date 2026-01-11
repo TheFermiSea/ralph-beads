@@ -171,7 +171,43 @@ echo "Test command: ${TEST_CMD:-none}"
 
 **Note:** The detected `TEST_CMD` should be used in the building prompt for running tests.
 
-### Step 5: Dry-Run Check
+### Step 5: Auto-Detect Complexity
+
+```bash
+# Detect complexity from task description
+# Default to STANDARD, override with --complexity flag if provided
+COMPLEXITY="${COMPLEXITY_ARG:-standard}"
+
+# Only auto-detect if no explicit override
+if [ -z "$COMPLEXITY_ARG" ]; then
+  # TRIVIAL patterns
+  if echo "$TASK" | grep -qiE 'fix typo|update comment|rename|spelling|whitespace'; then
+    COMPLEXITY="trivial"
+  # SIMPLE patterns
+  elif echo "$TASK" | grep -qiE 'add (button|toggle|flag)|remove unused|update (version|dep)'; then
+    COMPLEXITY="simple"
+  # CRITICAL patterns
+  elif echo "$TASK" | grep -qiE 'auth|security|payment|migration|credential|token|encrypt|password'; then
+    COMPLEXITY="critical"
+  fi
+fi
+
+# Label epic with complexity
+bd label add $EPIC_ID complexity:$COMPLEXITY
+
+# Output detected complexity
+echo "Complexity: $COMPLEXITY"
+```
+
+**Complexity Scaling Table:**
+| Complexity | Plan Iter | Build Iter | Validation |
+|------------|-----------|------------|------------|
+| TRIVIAL | 2 | 5 | Skip |
+| SIMPLE | 3 | 10 | Skip |
+| STANDARD | 5 | 20 | Auto-enable |
+| CRITICAL | 8 | 40 | Required |
+
+### Step 6: Dry-Run Check
 
 **If `--dry-run` specified:**
 Display: Mode, Epic ID, Molecule ID (if any), priority, type, labels, test framework
