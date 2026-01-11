@@ -62,13 +62,23 @@ bd daemon status || echo "Consider: bd daemon start (faster graph ops)"
 
 **PLANNING mode** (`--mode plan`):
 - Completion promise: `PLAN_READY`
-- Default max-iterations: 5
+- Default max-iterations: 5 (scaled by complexity)
 - Goal: Create proto (template epic) with sequenced tasks
 
 **BUILDING mode** (`--mode build` or default):
 - Completion promise: `DONE`
-- Default max-iterations: 20
+- Default max-iterations: 20 (scaled by complexity)
 - Goal: Execute molecule until complete
+
+**Complexity-Based Scaling (applied in Step 5):**
+| Complexity | Plan Iter | Build Iter |
+|------------|-----------|------------|
+| TRIVIAL | 2 | 5 |
+| SIMPLE | 3 | 10 |
+| STANDARD | 5 | 20 |
+| CRITICAL | 8 | 40 |
+
+Explicit `--max-iterations` flag always overrides scaled defaults.
 
 ### Step 3: Epic/Molecule Management
 
@@ -171,7 +181,7 @@ echo "Test command: ${TEST_CMD:-none}"
 
 **Note:** The detected `TEST_CMD` should be used in the building prompt for running tests.
 
-### Step 5: Auto-Detect Complexity
+### Step 5: Auto-Detect Complexity & Scale Iterations
 
 ```bash
 # Detect complexity from task description
@@ -195,8 +205,29 @@ fi
 # Label epic with complexity
 bd label add $EPIC_ID complexity:$COMPLEXITY
 
-# Output detected complexity
+# Apply iteration scaling (only if --max-iterations not explicitly set)
+if [ -z "$MAX_ITERATIONS_ARG" ]; then
+  case "$COMPLEXITY" in
+    trivial)
+      [ "$MODE" = "plan" ] && MAX_ITERATIONS=2 || MAX_ITERATIONS=5
+      ;;
+    simple)
+      [ "$MODE" = "plan" ] && MAX_ITERATIONS=3 || MAX_ITERATIONS=10
+      ;;
+    standard)
+      [ "$MODE" = "plan" ] && MAX_ITERATIONS=5 || MAX_ITERATIONS=20
+      ;;
+    critical)
+      [ "$MODE" = "plan" ] && MAX_ITERATIONS=8 || MAX_ITERATIONS=40
+      ;;
+  esac
+else
+  MAX_ITERATIONS="$MAX_ITERATIONS_ARG"
+fi
+
+# Output detected complexity and adjusted iterations
 echo "Complexity: $COMPLEXITY"
+echo "Max iterations: $MAX_ITERATIONS (mode=$MODE)"
 ```
 
 **Complexity Scaling Table:**
@@ -210,7 +241,7 @@ echo "Complexity: $COMPLEXITY"
 ### Step 6: Dry-Run Check
 
 **If `--dry-run` specified:**
-Display: Mode, Epic ID, Molecule ID (if any), priority, type, labels, test framework
+Display: Mode, Epic ID, Molecule ID (if any), priority, type, labels, test framework, complexity, max-iterations
 Output: "DRY RUN COMPLETE - no Ralph loop started"
 Exit without invoking loop.
 
