@@ -109,7 +109,7 @@ Without `bd prime`, an agent will often:
          │
 3. Loop:  ┌─────────────────────────────────────────┐
          │ Iteration N:                             │
-         │ ├── bd prime --mol $MOL_ID      ◄── FIRST│
+         │ ├── bd prime                    ◄── FIRST│
          │ ├── bd ready --mol $MOL_ID → next task   │
          │ ├── bd update <task> --status=in_progress│
          │ ├── Study code (subagents)               │
@@ -147,7 +147,7 @@ Without molecules, an agent might:
 
 With molecules:
 - `bd ready --mol <id>` returns only tasks within the molecule's scope
-- `bd prime --mol <id>` biases context to the active feature
+- `bd prime` provides global workflow context (molecule scope via `bd ready --mol`)
 - The agent stays focused on completing one coherent unit of work
 
 ### Molecule Lifecycle

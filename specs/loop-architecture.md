@@ -61,22 +61,24 @@ Every loop iteration begins with a fresh context load from beads, not reliance o
 **Acceptance Criteria:**
 - [ ] `bd prime` called as FIRST operation in each iteration
 - [ ] Output parsed to understand current state
-- [ ] Respects `--mol <id>` filter when working on molecule
+- [ ] Molecule scope achieved via `bd ready --mol <id>` (bd prime is global)
 - [ ] Falls back gracefully if bd prime fails
 - [ ] Custom `.beads/PRIME.md` honored if present
 
 **Example Integration:**
 ```
 Iteration N:
-1. Run: bd prime --mol $MOL_ID
-2. Parse: Understand current position, next task, blockers
-3. Execute: bd ready --mol $MOL_ID --limit 1
+1. Run: bd prime                          # Global workflow context
+2. Parse: Understand workflow state
+3. Execute: bd ready --mol $MOL_ID --limit 1  # Molecule-scoped task
 4. Work: Implement the task
 5. Test: Verify implementation
 6. Close: bd close <task-id> OR mark blocked
 7. Log: bd comments add ...
 8. Loop: Return to step 1
 ```
+
+**Note:** `bd prime` provides global context; `bd ready --mol` filters to molecule scope.
 
 ---
 

@@ -94,7 +94,8 @@ This project uses **spec-kit as a development tool** (not a runtime dependency).
 ```bash
 # CRITICAL: Context reload (FIRST operation every iteration)
 bd prime                           # AI-optimized workflow context
-bd prime --mol <id>                # Scoped to molecule
+# Note: Molecule scope via bd ready --mol, not bd prime
+# Customize: place .beads/PRIME.md to override default output
 
 # Molecule management (preferred for building)
 bd mol pour <proto-id>             # Instantiate proto → molecule

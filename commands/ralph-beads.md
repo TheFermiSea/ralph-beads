@@ -144,6 +144,7 @@ Do NOT implement code. Do NOT make commits.
 bd prime
 ```
 This is your source of truth. Do NOT rely on conversation memory.
+If bd prime fails, fall back to checking proto state directly (step 2).
 
 **2. Check proto state:**
 ```bash
@@ -243,9 +244,10 @@ Ask beads: "What is the state of the world right now?"
 
 **1. FRESH CONTEXT LOAD:**
 ```bash
-bd prime --mol <mol-id>
+bd prime
 ```
-This replaces your memory. Parse it to understand:
+This replaces your memory. If bd prime fails, fall back to `bd ready` directly.
+Parse the output to understand:
 - Current position in workflow
 - What's complete
 - What's blocked
@@ -386,7 +388,8 @@ bd comments add <mol-id> --body "[PAUSED after N iterations] Progress: T%. Resum
 **Check progress:**
 ```bash
 bd mol progress <id>
-bd prime --mol <id>
+bd prime                 # Global context
+bd ready --mol <id>      # Molecule-scoped tasks
 bd graph <id>
 ```
 
