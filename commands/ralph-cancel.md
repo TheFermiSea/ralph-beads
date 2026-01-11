@@ -33,11 +33,33 @@ bd comments add <epic-id> --body "[CANCELLED] <reason>. Resume with: /ralph-bead
 
 Use the Skill tool to invoke `ralph-loop:cancel-ralph`.
 
-### Step 4: Confirm Cancellation
+### Step 4: Report In-Progress Task
+
+Check for any task currently in_progress under this epic:
+
+```bash
+bd list --parent=<epic-id> --status=in_progress --json
+```
+
+If a task is in progress, note it for the confirmation message. **Do NOT change its status** - the task remains in_progress so work is not lost when resuming.
+
+### Step 5: Confirm Cancellation
 
 Display:
-- Epic ID
+- Epic ID and title
 - Current progress (tasks complete/total)
-- How to resume
+- In-progress task (if any) - note that it was preserved
+- How to resume: `/ralph-beads --epic <epic-id>`
+
+Example output:
+```
+Cancelled Ralph-Beads loop.
+
+Epic: rb-xxx - Feature implementation
+Progress: 3/7 tasks complete (43%)
+In-progress: rb-yyy - Implement validation (preserved)
+
+Resume with: /ralph-beads --epic rb-xxx
+```
 
 $ARGUMENTS

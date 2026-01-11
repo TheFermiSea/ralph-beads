@@ -72,13 +72,17 @@ bd daemon status || echo "Consider: bd daemon start (faster graph ops)"
 bd --no-daemon mol show <id>           # Verify molecule exists
 bd --no-daemon mol progress <id>       # Check current progress
 bd --no-daemon mol current <id>        # Show current position
+# Get epic from molecule and ensure state is set
+EPIC_ID=$(bd --no-daemon mol show <id> --json | jq -r '.proto_id // .epic_id')
+bd set-state $EPIC_ID mode=building
 ```
 
 **If `--epic <id>` provided (resume or pour):**
 
 ```bash
 bd show <id>                           # Verify epic exists
-# For building mode, pour into molecule:
+# For building mode, set state and pour into molecule:
+bd set-state <id> mode=building
 MOL_ID=$(bd --no-daemon mol pour <id>)
 ```
 
@@ -180,8 +184,9 @@ Perform gap analysis:
 For each identified task:
 
 ```bash
-# Create task as child of proto
-TASK_ID=$(bd q --parent=<epic-id> --type=task --title="<task title>" --priority=<1-4>)
+# Create task and set parent (bd q outputs just the ID for scripting)
+TASK_ID=$(bd q --type=task --priority=<1-4> "<task title>")
+bd update $TASK_ID --parent=<epic-id>
 
 # Add acceptance criteria
 bd update $TASK_ID --body "$(cat <<'EOF'
