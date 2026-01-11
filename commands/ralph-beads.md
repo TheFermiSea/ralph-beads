@@ -68,9 +68,10 @@ bd daemon status || echo "Consider: bd daemon start (faster graph ops)"
 **If `--mol <id>` provided (resume molecule):**
 
 ```bash
-bd mol show <id>                       # Verify molecule exists
-bd mol progress <id>                   # Check current progress
-bd mol current <id>                    # Show current position
+# Note: mol commands require --no-daemon for direct DB access
+bd --no-daemon mol show <id>           # Verify molecule exists
+bd --no-daemon mol progress <id>       # Check current progress
+bd --no-daemon mol current <id>        # Show current position
 ```
 
 **If `--epic <id>` provided (resume or pour):**
@@ -78,7 +79,7 @@ bd mol current <id>                    # Show current position
 ```bash
 bd show <id>                           # Verify epic exists
 # For building mode, pour into molecule:
-MOL_ID=$(bd mol pour <id> --title="$(bd show <id> --json | jq -r .title) - Execution")
+MOL_ID=$(bd --no-daemon mol pour <id>)
 ```
 
 **Otherwise (new epic/proto):**
@@ -289,20 +290,21 @@ bd label add <task-id> blocked
 On next iteration, `bd ready` will return a DIFFERENT task.
 This prevents infinite retry loops.
 
-## Wisp Support for Discovered Work
+## Ephemeral Tasks for Discovered Work
 
 If you discover a small cleanup needed (e.g., "update .gitignore"):
 
 ```bash
-# Create ephemeral task
-WISP=$(bd mol wisp "Update .gitignore")
+# Create ephemeral task (not synced to git)
+bd create --ephemeral --title="Update .gitignore"
 # Do the work
 # Close immediately
-bd close $WISP
+bd close <task-id>
 # Continue with main task
 ```
 
-Wisps create audit trail without cluttering backlog.
+Ephemeral tasks create audit trail without cluttering the synced backlog.
+Note: `bd mol wisp <proto-id>` is for ephemeral molecules from protos, not ad-hoc tasks.
 
 ## Work Protocol
 
@@ -387,15 +389,15 @@ bd comments add <mol-id> --body "[PAUSED after N iterations] Progress: T%. Resum
 
 **Check progress:**
 ```bash
-bd mol progress <id>
-bd prime                 # Global context
-bd ready --mol <id>      # Molecule-scoped tasks
+bd --no-daemon mol progress <id>   # Completion %
+bd prime                           # Global context
+bd --no-daemon ready --mol <id>    # Molecule-scoped tasks
 bd graph <id>
 ```
 
 **Handle discovered work:**
 ```bash
-bd mol wisp "Quick fix needed"
+bd create --ephemeral --title="Quick fix needed"
 ```
 
 $ARGUMENTS

@@ -156,20 +156,22 @@ Support lightweight, ephemeral tasks discovered during execution.
 **Scenario:** Agent realizes it needs to "update .gitignore" before continuing main task, but this shouldn't clutter project backlog.
 
 **Acceptance Criteria:**
-- [ ] `bd mol wisp "<task>"` creates ephemeral task
-- [ ] Wisp linked to current molecule context
-- [ ] Wisp closed immediately after completion
-- [ ] Wisps create audit trail but don't persist in backlog
-- [ ] `bd mol burn <wisp-id>` discards without trace if needed
+- [ ] `bd create --ephemeral --title="<task>"` creates ephemeral task
+- [ ] Ephemeral tasks not exported to JSONL (not synced via git)
+- [ ] Task closed immediately after completion
+- [ ] Ephemeral tasks create local audit trail but don't clutter synced backlog
+- [ ] `bd mol burn <id>` discards without trace if needed
 
 **Example:**
 ```bash
 # During task execution, discover cleanup needed
-bd mol wisp "Update .gitignore to exclude build artifacts"
+bd create --ephemeral --title="Update .gitignore to exclude build artifacts"
 # Do the cleanup
-bd close <wisp-id>
+bd close <task-id>
 # Continue with main task
 ```
+
+**Note:** `bd mol wisp <proto-id>` creates ephemeral molecules from protos, not ad-hoc tasks.
 
 ---
 

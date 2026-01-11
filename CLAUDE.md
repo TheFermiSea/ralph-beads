@@ -97,17 +97,19 @@ bd prime                           # AI-optimized workflow context
 # Note: Molecule scope via bd ready --mol, not bd prime
 # Customize: place .beads/PRIME.md to override default output
 
-# Molecule management (preferred for building)
-bd mol pour <proto-id>             # Instantiate proto → molecule
-bd mol progress <id>               # Check completion %
-bd mol current <id>                # Current position
-bd mol wisp "Quick task"           # Ephemeral discovered work
-bd mol squash <id>                 # Compress completed mol to digest
-bd mol burn <wisp-id>              # Discard wisp without trace
+# Molecule management (requires --no-daemon for direct DB access)
+bd --no-daemon mol pour <proto-id>   # Instantiate proto → molecule
+bd --no-daemon mol progress <id>     # Check completion %
+bd --no-daemon mol current <id>      # Current position
+bd --no-daemon mol squash <id>       # Compress completed mol to digest
+bd --no-daemon mol burn <mol-id>     # Discard molecule without trace
+
+# Ephemeral tasks (for discovered work, not synced to git)
+bd create --ephemeral --title="Quick cleanup task"
 
 # Task selection (algorithmic)
-bd ready --mol <id> --limit 1      # Single next actionable task
-bd ready --parent=<epic>           # Fallback without molecule
+bd --no-daemon ready --mol <id> --limit 1  # Single next actionable task
+bd ready --parent=<epic>                    # Fallback without molecule
 
 # Epic/Proto management
 bd create --type=epic --title="Proto: ..." --label=template
