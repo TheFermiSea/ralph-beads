@@ -562,11 +562,87 @@ Wisps:
    git commit -m "<type>(<scope>): <description> (<epic-id>/<task-id>)"
    ```
 
-7. Close task on success:
+7. **Validation Phase** (if enabled - see below)
+8. Close task on success:
    ```bash
    bd close $NEXT_TASK || echo "WARNING: Failed to close task"
    ```
    This automatically unblocks dependent tasks.
+
+## Validation Phase (Complexity-Based)
+
+**When validation is enabled:**
+- STANDARD complexity: Auto-enabled (can skip with `--skip-validate`)
+- CRITICAL complexity: Required (cannot be skipped)
+- TRIVIAL/SIMPLE: Disabled by default (can force with `--validate`)
+
+**After committing code, BEFORE closing task:**
+
+```bash
+# Determine if validation needed
+VALIDATE="false"
+case "$COMPLEXITY" in
+  standard)
+    [ "$SKIP_VALIDATE_ARG" != "true" ] && VALIDATE="true"
+    ;;
+  critical)
+    VALIDATE="true"  # Cannot skip CRITICAL
+    ;;
+  *)
+    [ "$VALIDATE_ARG" = "true" ] && VALIDATE="true"
+    ;;
+esac
+```
+
+**If validation enabled:**
+
+1. Get acceptance criteria:
+   ```bash
+   CRITERIA=$(bd show $NEXT_TASK | grep -A 100 "Description:" | head -50)
+   ```
+
+2. Get the git diff:
+   ```bash
+   DIFF=$(git diff HEAD~1 --stat && echo "---" && git diff HEAD~1)
+   ```
+
+3. Spawn blind reviewer (Task tool with code-reviewer agent):
+   ```
+   Prompt: "Review this code change against acceptance criteria.
+   You have NOT seen the implementation reasoning - only the result.
+
+   ## Acceptance Criteria
+   $CRITERIA
+
+   ## Code Changes
+   $DIFF
+
+   Respond with EXACTLY one of:
+   - APPROVED: <brief reason>
+   - REJECTED: <specific issues that must be fixed>
+   "
+   ```
+
+4. Handle result:
+   - **APPROVED** → Close task normally
+   - **REJECTED** → Log feedback, DON'T close, check circuit breaker:
+     ```bash
+     bd comments add $NEXT_TASK "[VALIDATION REJECTED] $FEEDBACK"
+
+     # Check if this is 2nd rejection (circuit breaker)
+     REJECTIONS=$(bd comments list $NEXT_TASK | grep -c '\[VALIDATION REJECTED\]')
+     if [ "$REJECTIONS" -ge 2 ]; then
+       bd update $NEXT_TASK --status=blocked
+       bd comments add $NEXT_TASK "[CIRCUIT BREAKER] 2 validation rejections - marking blocked"
+     fi
+     # Task remains open, next iteration will retry with feedback visible
+     ```
+
+**Key insight:** The reviewer NEVER sees:
+- Worker's exploration/reasoning
+- Previous failed attempts
+- Implementation plan
+This prevents confirmation bias.
 
 ## Subagent Strategy
 
