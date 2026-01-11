@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "author": {
     "name": "Brian Squires",
-    "url": "https://github.com/briansquires"
+    "url": "https://github.com/TheFermiSea"
   },
-  "repository": "https://github.com/briansquires/ralph-beads",
+  "repository": "https://github.com/TheFermiSea/ralph-beads",
   "license": "MIT",
   "keywords": [
     "ralph",
@@ -16,10 +16,5 @@
     "task-management",
     "autonomous-coding"
   ],
-  "dependencies": {
-    "plugins": [
-      "beads",
-      "ralph-loop"
-    ]
-  }
+  "commands": "./commands/"
 }

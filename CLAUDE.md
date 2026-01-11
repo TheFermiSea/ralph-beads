@@ -206,6 +206,61 @@ Ensure `--epic <id>` is provided for resume, or create new with `/ralph-beads --
 ### Loop doesn't stop
 The completion promise must be output exactly: `<promise>DONE</promise>` or `<promise>PLAN_READY</promise>`.
 
+## Plugin Development Guidelines
+
+**Reference:** https://code.claude.com/docs/en/plugins-reference
+
+### Directory Structure (CRITICAL)
+
+```
+ralph-beads/
+├── .claude-plugin/
+│   └── plugin.json          ← ONLY manifest here (nothing else!)
+├── commands/                ← At root level (NOT in .claude-plugin!)
+│   ├── ralph-beads.md
+│   ├── ralph-status.md
+│   └── ralph-cancel.md
+├── specs/                   ← Development specs
+├── docs/                    ← Documentation
+└── CLAUDE.md
+```
+
+### plugin.json Requirements
+
+- `name`: kebab-case, no spaces
+- `version`: semantic versioning (MAJOR.MINOR.PATCH)
+- `commands`: relative path starting with `./`
+- All paths must be relative and use forward slashes
+
+### Command File Format
+
+```yaml
+---
+description: Required - enables Skill tool invocation
+argument-hint: "[--flag] <arg>"  # Optional, shown in autocomplete
+allowed-tools: Bash(git:*)       # Optional, tool restrictions
+---
+
+Markdown content for Claude...
+```
+
+### Validation Checklist
+
+- [ ] `plugin.json` is valid JSON
+- [ ] Components at root level (not in `.claude-plugin/`)
+- [ ] All paths relative with `./` prefix
+- [ ] Command files have `description:` frontmatter
+- [ ] Test with `claude --debug`
+
+### Common Mistakes to Avoid
+
+| Mistake | Fix |
+|---------|-----|
+| Commands in `.claude-plugin/` | Move to `./commands/` at root |
+| Absolute paths | Use `./` relative paths |
+| Missing `description:` | Add to command frontmatter |
+| Invalid JSON | Validate with `claude plugin validate` |
+
 ## Future Enhancements
 
 - [ ] Swarm integration for parallel task execution
