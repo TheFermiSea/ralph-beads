@@ -282,13 +282,17 @@ Use Task tool with `Explore` agent.
 Track failures mentally within iteration. If same task fails TWICE:
 
 ```bash
-# Mark blocked, move on
-bd comment <task-id> "Stuck after 2 attempts: <error summary>"
-bd label add <task-id> blocked
+# Log the failure reason
+bd comments add <task-id> "Stuck after 2 attempts: <error summary>"
+# Set status to blocked (removes from bd ready results)
+bd update <task-id> --status=blocked
 ```
 
 On next iteration, `bd ready` will return a DIFFERENT task.
 This prevents infinite retry loops.
+
+**Important:** Use `--status=blocked`, not just a label. The status field
+controls `bd ready` filtering; labels are just metadata.
 
 ## Ephemeral Tasks for Discovered Work
 

@@ -128,9 +128,9 @@ bd state <id> mode
 bd comments add <id> --body "..."
 bd comments list <id>
 
-# Circuit breaker
-bd label add <id> blocked          # After 2 failures
-bd comment <id> "Stuck: <error>"   # Log the reason
+# Circuit breaker (after 2 failures on same task)
+bd comments add <id> "Stuck: <error summary>"  # Log the reason
+bd update <id> --status=blocked                 # Removes from bd ready
 
 # Performance
 bd daemon start                    # Keep graph in memory

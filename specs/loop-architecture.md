@@ -92,9 +92,9 @@ Prevents infinite retry loops by marking tasks as blocked after repeated failure
 **Acceptance Criteria:**
 - [ ] Track failure count per task (in iteration context)
 - [ ] After 2 consecutive failures on same task: mark blocked
-- [ ] On marking blocked: `bd comment <id> "Stuck: <error summary>"`
-- [ ] On marking blocked: `bd label <id> blocked`
-- [ ] `bd ready` skips blocked tasks automatically
+- [ ] On marking blocked: `bd comments add <id> "Stuck: <error summary>"`
+- [ ] On marking blocked: `bd update <id> --status=blocked`
+- [ ] `bd ready` skips tasks with status=blocked automatically
 - [ ] Agent moves to next unblocked task
 - [ ] Blocked tasks visible in `/ralph-status` output
 
@@ -106,9 +106,9 @@ Next iteration: bd ready returns different task
 ```
 
 **Tests:**
-- [ ] After 2 failures, task has `blocked` label
-- [ ] `bd ready` does not return blocked tasks
-- [ ] Iteration continues with next task
+- [x] After 2 failures, task gets status=blocked
+- [x] `bd ready` does not return tasks with status=blocked
+- [ ] Iteration continues with next task (verified at integration)
 
 ---
 
