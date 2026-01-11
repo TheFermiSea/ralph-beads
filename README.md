@@ -36,9 +36,22 @@ Standard Ralph uses file-based state management:
 git clone https://github.com/briansquires/ralph-beads.git
 cd ralph-beads
 
+# Verify dependencies
+./scripts/check-deps.sh
+
 # Install as Claude Code plugin
 claude plugins install .
 ```
+
+### Verify Dependencies
+
+Run the dependency checker to ensure required plugins are installed:
+
+```bash
+./scripts/check-deps.sh
+```
+
+This verifies that `beads` and `ralph-loop` plugins are available.
 
 ## Usage
 
