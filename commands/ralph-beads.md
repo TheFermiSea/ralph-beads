@@ -1,28 +1,39 @@
 ---
-description: Deep beads-integrated Ralph loop with epic-based task management
-argument-hint: "[--mode plan|build] [--epic <id>] [--priority 0-4] [--max-iterations N] [--dry-run] <task>"
+description: Deep beads-integrated Ralph loop with molecule-based workflow execution
+argument-hint: "[--mode plan|build] [--epic <id>] [--mol <id>] [--priority 0-4] [--max-iterations N] [--dry-run] <task>"
 ---
 
-# Ralph-Beads: Deep Beads Integration for Iterative Development
+# Ralph-Beads: Stateless Intelligence, Stateful Graph
 
 This command implements the Ralph Playbook methodology with **beads as the single source of truth**.
-No duplicate state management—beads IS the execution control plane.
+The agent treats each iteration as a fresh start—beads IS the execution control plane.
 
-## Key Differences from Standard Ralph
+## Core Philosophy
 
-| Standard Ralph | Ralph-Beads |
-|----------------|-------------|
-| IMPLEMENTATION_PLAN.md | Beads epic with child tasks |
-| Implicit task ordering | `bd dep add` for explicit sequencing |
-| Notes field for progress | `bd comments` for structured logs |
-| File-based mode tracking | `bd set-state` with audit trail |
-| Manual task selection | `bd ready` for unblocked work |
+```
+AGENT (Claude) = PROCESSOR → Treats every iteration as fresh
+BEADS (bd)     = HEAP      → Stores absolute truth
+```
+
+The agent does NOT need to "remember" what it did three hours ago.
+It only needs to ask Beads: "What is the state of the world right now?"
+
+## Key Features
+
+| Concept | Implementation |
+|---------|----------------|
+| Context reload | `bd prime` every iteration |
+| Task selection | `bd ready --mol <id>` (algorithmic, not LLM judgment) |
+| Workflow scope | Molecules (`bd mol`) bias context to feature |
+| Discovered work | Wisps (`bd mol wisp`) for ephemeral tasks |
+| Circuit breaker | Mark blocked after 2 failures |
 
 ## Arguments
 
 Parse the following from $ARGUMENTS:
 - `--mode <plan|build>` - Execution mode (default: build)
 - `--epic <id>` - Resume existing beads epic (skip creation)
+- `--mol <id>` - Resume existing molecule (preferred over --epic)
 - `--priority <0-4>` - Epic priority (default: 2)
 - `--max-iterations <n>` - Maximum iterations (default: 5 for plan, 20 for build)
 - `--dry-run` - Preview setup without executing
@@ -30,73 +41,76 @@ Parse the following from $ARGUMENTS:
 
 ## Setup Phase
 
-### Step 1: Determine Mode & Defaults
+### Step 1: Environment Check
+
+```bash
+# Verify beads is ready
+bd info
+
+# Check if daemon running (recommended)
+bd daemon status || echo "Consider: bd daemon start (faster graph ops)"
+```
+
+### Step 2: Determine Mode & Defaults
 
 **PLANNING mode** (`--mode plan`):
 - Completion promise: `PLAN_READY`
 - Default max-iterations: 5
-- Goal: Create epic structure with sequenced tasks
+- Goal: Create proto (template epic) with sequenced tasks
 
 **BUILDING mode** (`--mode build` or default):
 - Completion promise: `DONE`
 - Default max-iterations: 20
-- Goal: Execute tasks from epic until complete
+- Goal: Execute molecule until complete
 
-### Step 2: Epic Management
+### Step 3: Epic/Molecule Management
 
-**If `--epic <id>` provided (resume mode):**
+**If `--mol <id>` provided (resume molecule):**
+
+```bash
+bd mol show <id>                       # Verify molecule exists
+bd mol progress <id>                   # Check current progress
+bd mol current <id>                    # Show current position
+```
+
+**If `--epic <id>` provided (resume or pour):**
 
 ```bash
 bd show <id>                           # Verify epic exists
-bd set-state <id> mode=active          # Mark as active
-bd update <id> --status=in_progress    # Claim work
+# For building mode, pour into molecule:
+MOL_ID=$(bd mol pour <id> --title="$(bd show <id> --json | jq -r .title) - Execution")
 ```
 
-Check if epic has blockers. If blocked, report and exit.
-Check `bd state <id> mode` for previous mode (planning/building).
-Read comments for iteration history.
-
-**Otherwise (new epic):**
+**Otherwise (new epic/proto):**
 
 Detect epic type from task keywords:
 - "fix", "bug", "error", "crash" → type=bug
 - "feat", "add", "implement", "create" → type=feature
-- "refactor", "clean", "improve" → type=task
 - Default → type=task
 
 ```bash
-bd create --type=epic --title="Ralph: <task-summary>" --priority=<priority>
+# Create proto (template for molecule)
+bd create --type=epic --title="Proto: <task-summary>" --priority=<priority>
 bd label add <epic-id> ralph
-bd label add <epic-id> automated
+bd label add <epic-id> template
 bd set-state <epic-id> mode=planning
-```
-
-### Step 3: Record Metadata
-
-```bash
-bd comments add <epic-id> --body "Session started at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 ```
 
 ### Step 4: Auto-Detect Test Framework
 
-Check project files:
-- `Cargo.toml` → Rust: `cargo nextest run` or `cargo test`
-- `pyproject.toml` / `setup.py` → Python: `pytest`
-- `package.json` → Node: `npm test`
-
-Store in epic notes or as label: `bd label add <epic-id> framework:rust`
-
-### Step 5: Validate Prerequisites
-
 ```bash
-bd ready --epic=<epic-id>  # Check if any tasks are unblocked (building mode)
-bd epic status <epic-id>   # Check completion percentage
+# Detect from project files
+[ -f "Cargo.toml" ] && echo "framework:rust"
+[ -f "pyproject.toml" ] && echo "framework:python"
+[ -f "package.json" ] && echo "framework:node"
+
+bd label add <epic-id> framework:<detected>
 ```
 
-### Step 6: Dry-Run Check
+### Step 5: Dry-Run Check
 
 **If `--dry-run` specified:**
-Display: Mode, Epic ID, priority, type, labels, test framework, task count
+Display: Mode, Epic ID, Molecule ID (if any), priority, type, labels, test framework
 Output: "DRY RUN COMPLETE - no Ralph loop started"
 Exit without invoking loop.
 
@@ -108,8 +122,6 @@ Exit without invoking loop.
 --completion-promise '<promise>' --max-iterations <N> <prompt>
 ```
 
-Where `<promise>` is `PLAN_READY` (planning) or `DONE` (building).
-
 ---
 
 ## PLANNING MODE PROMPT
@@ -118,32 +130,35 @@ Where `<promise>` is `PLAN_READY` (planning) or `DONE` (building).
 PLANNING MODE: <task description>
 
 Epic: <epic-id>
-Started: <timestamp>
+Phase: Proto creation (template for molecule)
 
 ## Your Role
 
-You are in PLANNING mode. Your job is to:
-1. Study the codebase and requirements
-2. Perform gap analysis
-3. Create child tasks under the epic with proper sequencing
-4. Do NOT implement code or make commits
+Create a proto (template epic) with properly sequenced tasks.
+Do NOT implement code. Do NOT make commits.
 
-## Startup Ritual (EVERY iteration)
+## Startup Ritual (EVERY iteration - CRITICAL)
 
-1. **Check epic state:**
-   ```bash
-   bd show <epic-id>
-   bd comments list <epic-id> --limit=5
-   ```
-   Parse comments for previous iteration count.
+**1. FRESH CONTEXT LOAD:**
+```bash
+bd prime
+```
+This is your source of truth. Do NOT rely on conversation memory.
 
-2. **Study existing code:**
-   Use Task tool with `Explore` agent. DON'T ASSUME NOT IMPLEMENTED.
+**2. Check proto state:**
+```bash
+bd show <epic-id>
+bd comments list <epic-id> --limit=5
+```
 
-3. **Check existing tasks:**
-   ```bash
-   bd list --epic=<epic-id>
-   ```
+**3. Study existing code (use subagents):**
+Use Task tool with `Explore` agent.
+**DON'T ASSUME NOT IMPLEMENTED** - verify before planning.
+
+**4. Check existing tasks:**
+```bash
+bd list --parent=<epic-id>
+```
 
 ## Planning Protocol
 
@@ -154,7 +169,7 @@ Use parallel subagents (Task tool with Explore) to investigate:
 - Dependencies and integration points
 
 Perform gap analysis:
-- What exists?
+- What exists? (DO NOT recreate)
 - What's missing?
 - What needs modification?
 
@@ -163,28 +178,33 @@ Perform gap analysis:
 For each identified task:
 
 ```bash
-# Create task as child of epic
-bd create --parent=<epic-id> --type=task --title="<task title>" --priority=<1-4>
+# Create task as child of proto
+TASK_ID=$(bd q --parent=<epic-id> --type=task --title="<task title>" --priority=<1-4>)
 
-# Add acceptance criteria to description
-bd edit <task-id>  # Or use bd update with --body
+# Add acceptance criteria
+bd update $TASK_ID --body "$(cat <<'EOF'
+## Acceptance Criteria
+- [ ] Criterion 1
+- [ ] Criterion 2
+EOF
+)"
 
 # Add dependency on previous task (for sequencing)
-bd dep add <this-task-id> <previous-task-id>
+bd dep add $TASK_ID $PREVIOUS_TASK_ID
 ```
 
 **Task structure:**
 - Title: Clear, actionable (e.g., "Implement validation logic")
 - Description: Acceptance criteria as checklist
-- Priority: P1 = do first, P4 = do last
-- Dependencies: Each task depends on its predecessor
+- Priority: P1 = critical path, P4 = nice-to-have
+- Dependencies: Form a DAG (directed acyclic graph)
 
 ## Progress Logging
 
 At END of EVERY iteration:
 
 ```bash
-bd comments add <epic-id> --body "[plan:N] Created T tasks, identified G gaps. Summary: <what was analyzed>"
+bd comments add <epic-id> --body "[plan:N] Created T tasks. Gaps: <summary>. Next: <what to analyze>"
 ```
 
 ## Completion Criteria
@@ -192,13 +212,14 @@ bd comments add <epic-id> --body "[plan:N] Created T tasks, identified G gaps. S
 Output `<promise>PLAN_READY</promise>` ONLY when:
 - Gap analysis complete
 - All tasks created with acceptance criteria
-- Dependencies establish execution order
-- `bd list --epic=<epic-id>` shows complete task structure
+- Dependencies form valid DAG
+- `bd list --parent=<epic-id>` shows complete structure
 
 Then:
 ```bash
+bd label add <epic-id> ready
 bd set-state <epic-id> mode=ready_for_build
-bd comments add <epic-id> --body "[PLAN COMPLETE] T tasks ready. Resume with: /ralph-beads --mode build --epic <epic-id>"
+bd comments add <epic-id> --body "[PROTO COMPLETE] T tasks defined. Pour with: /ralph-beads --mode build --epic <epic-id>"
 ```
 ---END PLANNING PROMPT---
 
@@ -209,98 +230,137 @@ bd comments add <epic-id> --body "[PLAN COMPLETE] T tasks ready. Resume with: /r
 ---BEGIN BUILDING PROMPT---
 BUILDING MODE: <task description>
 
+Molecule: <mol-id>
 Epic: <epic-id>
 Test Framework: <framework or "none">
 
-## Your Role
+## Core Principle: Stateless Intelligence
 
-Execute tasks from the epic, one per iteration, in dependency order.
+Every iteration is a FRESH START. You do NOT remember what you did before.
+Ask beads: "What is the state of the world right now?"
 
-## Startup Ritual (EVERY iteration)
+## Startup Ritual (EVERY iteration - CRITICAL)
 
-1. **Check epic state:**
-   ```bash
-   bd show <epic-id>
-   bd epic status <epic-id>
-   bd comments list <epic-id> --limit=3
-   ```
+**1. FRESH CONTEXT LOAD:**
+```bash
+bd prime --mol <mol-id>
+```
+This replaces your memory. Parse it to understand:
+- Current position in workflow
+- What's complete
+- What's blocked
+- What's next
 
-2. **Check git state:**
-   ```bash
-   git status
-   git log -3 --oneline
-   ```
+**2. Get next unblocked task:**
+```bash
+bd ready --mol <mol-id> --limit 1
+```
+This returns the SINGLE next actionable task.
+Do NOT pick a different task. Trust the algorithm.
 
-3. **Find next task:**
-   ```bash
-   bd ready --epic=<epic-id>
-   ```
-   This returns unblocked tasks (dependencies satisfied).
-   Pick the first one (highest priority unblocked).
+**3. If no task returned:** Check if complete:
+```bash
+bd mol progress <mol-id>
+```
+If 100% → output `<promise>DONE</promise>`
+If blocked tasks exist → report blockers
 
-4. **Claim the task:**
-   ```bash
-   bd update <task-id> --status=in_progress
-   ```
+**4. Claim the task:**
+```bash
+bd update <task-id> --status=in_progress
+```
 
-5. **Study relevant code:**
-   Use Task tool with `Explore` agent. DON'T ASSUME NOT IMPLEMENTED.
+**5. Study relevant code (fresh every time):**
+Use Task tool with `Explore` agent.
+**DON'T ASSUME NOT IMPLEMENTED** - verify before changing.
 
-6. **Run baseline tests:**
-   If tests fail, fix them BEFORE new work.
+## Circuit Breaker (CRITICAL)
 
-## Subagent Strategy
+Track failures mentally within iteration. If same task fails TWICE:
 
-- Use `Explore` agent for codebase searches (context isolation)
-- Use parallel subagents for independent file reads
-- Use SINGLE agent for tests/build (backpressure)
-- Never run tests in parallel
+```bash
+# Mark blocked, move on
+bd comment <task-id> "Stuck after 2 attempts: <error summary>"
+bd label add <task-id> blocked
+```
+
+On next iteration, `bd ready` will return a DIFFERENT task.
+This prevents infinite retry loops.
+
+## Wisp Support for Discovered Work
+
+If you discover a small cleanup needed (e.g., "update .gitignore"):
+
+```bash
+# Create ephemeral task
+WISP=$(bd mol wisp "Update .gitignore")
+# Do the work
+# Close immediately
+bd close $WISP
+# Continue with main task
+```
+
+Wisps create audit trail without cluttering backlog.
 
 ## Work Protocol
 
-1. Focus on ONE task per iteration
-2. Make incremental changes
-3. Follow existing patterns
-4. Commit after each meaningful change:
+1. Focus on ONE task per iteration (from `bd ready`)
+2. Study code BEFORE making changes
+3. Make incremental changes
+4. Follow existing patterns
+5. Run tests (backpressure pattern):
+   ```bash
+   # If tests fail, fix BEFORE committing
+   <test-command>
+   ```
+6. Commit after each meaningful change:
    ```bash
    git add -A
    git commit -m "<type>(<scope>): <description> (<epic-id>/<task-id>)"
    ```
 
-5. After task complete:
+7. Close task on success:
    ```bash
    bd close <task-id>
    ```
    This automatically unblocks dependent tasks.
+
+## Subagent Strategy
+
+- Use `Explore` agent for codebase searches (isolates context)
+- Use parallel subagents for independent file reads
+- Use SINGLE agent for tests/build (backpressure)
+- Never run tests in parallel
 
 ## Progress Logging
 
 At END of EVERY iteration:
 
 ```bash
-bd comments add <epic-id> --body "[iter:N] [task:<task-id>] [tests:P/F/S] [commits:M] Summary: <what was done>"
+bd comments add <mol-id> --body "[iter:N] [task:<task-id>] [status:<done|blocked|wip>] [tests:P/F/S] <summary>"
 ```
 
 ## Completion Criteria
 
 Output `<promise>DONE</promise>` ONLY when:
-- `bd ready --epic=<epic-id>` returns no tasks (all complete)
-- `bd epic status <epic-id>` shows 100%
+- `bd ready --mol <mol-id>` returns empty (nothing unblocked)
+- `bd mol progress <mol-id>` shows 100%
 - Tests pass
 - Git status clean
 
 Then:
 ```bash
-bd close <epic-id> --reason "Completed: T tasks, N iterations, M commits"
+bd mol squash <mol-id>  # Compress to digest
+bd close <epic-id> --reason "Completed via molecule <mol-id>"
 ```
 
 ## If Max Iterations Reached
 
-Do NOT close the epic. Update state:
+Do NOT close the epic. Preserve state:
 
 ```bash
-bd set-state <epic-id> mode=blocked
-bd comments add <epic-id> --body "[BLOCKED after N iterations] Progress: T/Total tasks. Blockers: <issues>. Resume: /ralph-beads --epic <epic-id> --max-iterations 40"
+bd set-state <epic-id> mode=paused
+bd comments add <mol-id> --body "[PAUSED after N iterations] Progress: T%. Resume: /ralph-beads --mol <mol-id> --max-iterations 40"
 ```
 ---END BUILDING PROMPT---
 
@@ -313,21 +373,26 @@ bd comments add <epic-id> --body "[BLOCKED after N iterations] Progress: T/Total
 /ralph-beads --mode plan "Implement feature X"
 ```
 
-**Switch to building:**
+**Pour proto into molecule and build:**
 ```bash
-/ralph-beads --mode build --epic <id> "Execute the plan"
+/ralph-beads --mode build --epic <proto-id>
 ```
 
-**Resume work:**
+**Resume molecule:**
 ```bash
-/ralph-beads --epic <id> "Continue"
+/ralph-beads --mol <mol-id>
 ```
 
 **Check progress:**
 ```bash
-bd epic status <id>
+bd mol progress <id>
+bd prime --mol <id>
 bd graph <id>
-bd activity --follow --mol <id>
+```
+
+**Handle discovered work:**
+```bash
+bd mol wisp "Quick fix needed"
 ```
 
 $ARGUMENTS

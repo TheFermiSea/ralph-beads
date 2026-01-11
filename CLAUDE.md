@@ -6,17 +6,22 @@ Ralph-Beads is a Claude Code plugin that deeply integrates the Ralph Playbook me
 
 ## Architecture
 
-### Core Philosophy
+### Core Philosophy: Stateless Intelligence, Stateful Graph
 
 **Standard Ralph:**
 ```
 PROMPT.md + IMPLEMENTATION_PLAN.md + git commits = state
+Agent relies on conversation context (CONTEXT DRIFT!)
 ```
 
 **Ralph-Beads:**
 ```
-Beads epic + child tasks + dependencies + comments = state
+AGENT (Claude) = PROCESSOR → Treats every iteration as FRESH START
+BEADS (bd)     = HEAP      → Stores absolute truth
+Agent asks beads: "What is the state of the world right now?"
 ```
+
+This architecture eliminates context drift—the agent doesn't need to "remember" what it did three hours ago.
 
 ### Key Components
 
@@ -32,15 +37,39 @@ Beads epic + child tasks + dependencies + comments = state
 
 | Ralph Concept | Beads Implementation |
 |---------------|---------------------|
+| **Context reload** | `bd prime` (FIRST operation every iteration!) |
+| Task selection | `bd ready --mol <id>` (algorithmic, not LLM judgment) |
+| Workflow scope | `bd mol pour` (molecules bias context to feature) |
+| Discovered work | `bd mol wisp` (ephemeral tasks) |
 | Task list | `bd create --parent=<epic>` (child tasks) |
-| Task ordering | `bd dep add` (dependencies) |
+| Task ordering | `bd dep add` (dependencies form DAG) |
 | Progress tracking | `bd comments add` (iteration logs) |
 | Mode switching | `bd set-state` (state dimensions) |
-| Task selection | `bd ready --epic=<id>` (unblocked work) |
-| Completion check | `bd epic status` (percentage complete) |
+| Completion check | `bd mol progress` (percentage complete) |
 | Visualization | `bd graph` (dependency tree) |
+| Performance | `bd daemon start` (keeps graph in memory) |
+| Circuit breaker | After 2 failures: `bd label add <id> blocked` |
 
 ## Development Guidelines
+
+### Spec-Driven Development
+
+This project uses **spec-kit as a development tool** (not a runtime dependency). Specs live in `specs/` and define requirements that we implement and validate against.
+
+**Development Workflow:**
+```
+1. Write/update specs in specs/*.md
+2. Run /speckit.checklist specs/<file>.md → extract acceptance criteria
+3. Convert criteria to beads tasks: bd create --title="..."
+4. Implement using ralph-beads itself (dogfooding!)
+5. Validate: re-run checklist, verify criteria pass
+6. Ship when all specs satisfied
+```
+
+**Current Specs:**
+- `specs/core-workflow.md` - Planning mode, building mode, state transitions
+- `specs/beads-integration.md` - Epic structure, task selection, dependencies
+- `specs/commands.md` - /ralph-beads, /ralph-status, /ralph-cancel
 
 ### Testing Changes
 
@@ -63,14 +92,29 @@ Beads epic + child tasks + dependencies + comments = state
 ### Beads Commands Reference
 
 ```bash
-# Epic management
-bd create --type=epic --title="..." --priority=2
+# CRITICAL: Context reload (FIRST operation every iteration)
+bd prime                           # AI-optimized workflow context
+bd prime --mol <id>                # Scoped to molecule
+
+# Molecule management (preferred for building)
+bd mol pour <proto-id>             # Instantiate proto → molecule
+bd mol progress <id>               # Check completion %
+bd mol current <id>                # Current position
+bd mol wisp "Quick task"           # Ephemeral discovered work
+bd mol squash <id>                 # Compress completed mol to digest
+bd mol burn <wisp-id>              # Discard wisp without trace
+
+# Task selection (algorithmic)
+bd ready --mol <id> --limit 1      # Single next actionable task
+bd ready --parent=<epic>           # Fallback without molecule
+
+# Epic/Proto management
+bd create --type=epic --title="Proto: ..." --label=template
 bd epic status <id>
 
 # Task management
 bd create --parent=<epic> --type=task --title="..."
 bd dep add <task-id> <depends-on-id>
-bd ready --epic=<id>
 
 # State management
 bd set-state <id> mode=planning
@@ -80,6 +124,14 @@ bd state <id> mode
 # Progress tracking
 bd comments add <id> --body "..."
 bd comments list <id>
+
+# Circuit breaker
+bd label add <id> blocked          # After 2 failures
+bd comment <id> "Stuck: <error>"   # Log the reason
+
+# Performance
+bd daemon start                    # Keep graph in memory
+bd daemon status                   # Check daemon
 
 # Visualization
 bd graph <id>
@@ -159,4 +211,3 @@ The completion promise must be output exactly: `<promise>DONE</promise>` or `<pr
 - [ ] Swarm integration for parallel task execution
 - [ ] Activity feed integration for real-time monitoring
 - [ ] Gate support for multi-agent coordination
-- [ ] Spec-kit integration for requirements management
