@@ -191,6 +191,9 @@ if [ "$WORKTREE_FLAG" = "true" ]; then
     # Export for cleanup later
     export WORKTREE_PATH="$WORKTREE_PATH"
     export BRANCH_NAME="$BRANCH_NAME"
+
+    # SAFETY: Write path to tracker file so runner can clean up if interrupted
+    echo "$WORKTREE_PATH" > "$(git rev-parse --show-toplevel)/.ralph-worktree-tracker"
   else
     echo "WARNING: --worktree only applies in building mode with molecule"
   fi
@@ -309,7 +312,7 @@ if [ -z "$COMPLEXITY_ARG" ]; then
   if echo "$TASK" | grep -qiE 'fix typo|update comment|rename|spelling|whitespace'; then
     COMPLEXITY="trivial"
   # SIMPLE patterns
-  elif echo "$TASK" | grep -qiE 'add (button|toggle|flag)|remove unused|update (version|dep)'; then
+  elif echo "$TASK" | grep -qiE 'add (button|toggle|flag)|toggle|remove unused|update (version|dep)'; then
     COMPLEXITY="simple"
   # CRITICAL patterns
   elif echo "$TASK" | grep -qiE 'auth|security|payment|migration|credential|token|encrypt|password'; then

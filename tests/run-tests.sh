@@ -72,8 +72,17 @@ section "Shellcheck (if available)"
 maybe_shellcheck "$ROOT/scripts/check-deps.sh"
 maybe_shellcheck "$ROOT/commands/ralph-runner.sh"
 
-smoke_runner
-snapshot_prompt
+section "Prompt lint"
+"$ROOT/tests/lint-prompt-embedded.sh" || FAILURES=1
+
+section "Logic verification"
+"$ROOT/tests/verify-complexity.sh" || FAILURES=1
+
+section "Safety verification"
+"$ROOT/tests/verify-safety.sh" || FAILURES=1
+
+smoke_runner || FAILURES=1
+snapshot_prompt || FAILURES=1
 
 if [ "$FAILURES" -ne 0 ]; then
   echo "Tests completed with failures."
