@@ -93,6 +93,14 @@ Run the dependency checker to ensure required plugins are installed:
 
 This verifies that `beads` and `ralph-loop` plugins are available.
 
+### Tests
+
+Run the lightweight test suite (syntax checks, optional shellcheck, runner smoke test, and prompt snapshot assertions):
+
+```bash
+./tests/run-tests.sh
+```
+
 ## Usage
 
 ### Start a New Task
