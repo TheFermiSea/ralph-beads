@@ -1,0 +1,13 @@
+{
+  "name": "ralph-beads-local",
+  "description": "Local marketplace for ralph-beads plugin development",
+  "plugins": [
+    {
+      "id": "ralph-beads",
+      "source": {
+        "source": "directory",
+        "path": ".."
+      }
+    }
+  ]
+}
