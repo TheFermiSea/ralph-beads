@@ -95,11 +95,16 @@ This verifies that `beads` and `ralph-loop` plugins are available.
 
 ### Tests
 
-Run the lightweight test suite (syntax checks, optional shellcheck, runner smoke test, and prompt snapshot assertions):
+Run the production test suite (syntax checks, optional shellcheck, prompt linting, logic verification, safety simulation, runner smoke test, and prompt snapshot assertions):
 
 ```bash
 ./tests/run-tests.sh
 ```
+
+- `tests/lint-prompt-embedded.sh` – extracts embedded bash blocks from `commands/ralph-beads.md` and shellchecks them
+- `tests/verify-complexity.sh` – validates complexity heuristics
+- `tests/verify-safety.sh` – simulates trap cleanup for worktrees via `commands/ralph-runner.sh`
+- Existing smoke/snapshot checks remain in `tests/run-tests.sh`
 
 ## Usage
 
@@ -141,6 +146,11 @@ bd activity --follow --mol <epic-id>
 /ralph-cancel --epic <epic-id> --reason "Need to pivot approach"
 ```
 
+### Safety and Worktrees
+
+- Use `./commands/ralph-runner.sh` to wrap `/ralph-beads`; it writes the active worktree path to `.ralph-worktree-tracker` and cleans it on EXIT/INT/TERM.
+- When `--worktree` or `--pr` is used, the prompt writes the worktree path into the tracker so the runner can remove it even after crashes.
+
 ## Workflow
 
 ### Typical Flow
@@ -181,7 +191,14 @@ bd activity --follow --mol <epic-id>
 OPTIONS:
   --mode <plan|build>    Execution mode (default: build)
   --epic <id>            Resume existing epic
+  --mol <id>             Resume existing molecule
+  --resume <id>          Fast resume of molecule (skip setup)
   --priority <0-4>       Epic priority (default: 2)
+  --complexity <level>   Override auto-detected complexity
+  --validate             Force validation (otherwise complexity-driven)
+  --skip-validate        Skip validation when allowed
+  --worktree             Use isolated git worktree (implied by --pr)
+  --pr                   Push branch and open PR after completion
   --max-iterations <n>   Max iterations (default: 5/20)
   --dry-run              Preview without executing
 ```
