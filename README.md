@@ -38,6 +38,7 @@ bd daemon start
 
 # 4. Run your first ralph-beads task
 /ralph-beads "Fix the login form validation bug"
+# (Optional) Use ./commands/ralph-runner.sh to wrap the command and auto-clean worktrees on exit.
 ```
 
 That's it! Ralph-beads will:

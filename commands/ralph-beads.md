@@ -1,6 +1,6 @@
 ---
 description: Deep beads-integrated Ralph loop with molecule-based workflow execution
-argument-hint: "[--mode plan|build] [--epic <id>] [--mol <id>] [--priority 0-4] [--complexity <level>] [--validate|--skip-validate] [--worktree] [--pr] [--max-iterations N] [--dry-run] <task>"
+argument-hint: "[--mode plan|build] [--epic <id>] [--mol <id>] [--resume <id>] [--priority 0-4] [--complexity <level>] [--validate|--skip-validate] [--worktree] [--pr] [--max-iterations N] [--dry-run] <task>"
 ---
 
 # Ralph-Beads: Stateless Intelligence, Stateful Graph
@@ -22,7 +22,7 @@ It only needs to ask Beads: "What is the state of the world right now?"
 
 | Concept | Implementation |
 |---------|----------------|
-| Context reload | `bd prime` every iteration |
+| Context reload | `bd prime --focus <id>` every iteration (fallback to `bd prime`) |
 | Task selection | `bd ready --mol <id>` (algorithmic, not LLM judgment) |
 | Workflow scope | Molecules (`bd mol`) bias context to feature |
 | Discovered work | Wisps (`bd mol wisp`) for ephemeral tasks |
@@ -34,6 +34,7 @@ Parse the following from $ARGUMENTS:
 - `--mode <plan|build>` - Execution mode (default: build)
 - `--epic <id>` - Resume existing beads epic (skip creation)
 - `--mol <id>` - Resume existing molecule (preferred over --epic)
+- `--resume <id>` - Fast resume of an existing molecule (skip setup, jump straight to loop)
 - `--priority <0-4>` - Epic priority (default: 2)
 - `--complexity <trivial|simple|standard|critical>` - Override auto-detected complexity
 - `--validate` - Force validation even for TRIVIAL/SIMPLE tasks
@@ -80,17 +81,33 @@ bd daemon status || echo "Consider: bd daemon start (faster graph ops)"
 
 Explicit `--max-iterations` flag always overrides scaled defaults.
 
-### Step 3: Epic/Molecule Management
+### Step 3: Epic/Molecule Management (JSON-first)
+
+**Always prefer `--json` output for bd reads to avoid parsing drift.**
+
+**If `--resume <id>` provided (fast path - skip setup):**
+
+```bash
+# Treat resume as build-mode jump straight to loop
+MODE="build"
+MOL_ID="<id>"
+
+bd --no-daemon mol show $MOL_ID --json | jq .
+EPIC_ID=$(bd --no-daemon mol show $MOL_ID --json | jq -r '.proto_id // .epic_id // empty')
+[ -z "$EPIC_ID" ] && { echo "ERROR: Cannot determine epic from molecule"; exit 1; }
+
+bd set-state $EPIC_ID mode=building
+```
 
 **If `--mol <id>` provided (resume molecule):**
 
 ```bash
 # Note: mol commands require --no-daemon for direct DB access
 # Verify molecule exists (MUST succeed)
-bd --no-daemon mol show <id> || { echo "ERROR: Molecule <id> not found"; exit 1; }
+bd --no-daemon mol show <id> --json | jq . || { echo "ERROR: Molecule <id> not found"; exit 1; }
 
-bd --no-daemon mol progress <id>       # Check current progress
-bd --no-daemon mol current <id>        # Show current position
+bd --no-daemon mol progress <id> --json | jq -r '.percent // 0'  # Check current progress
+bd --no-daemon mol current <id> --json | jq .                    # Show current position
 
 # Get epic from molecule (validate JSON extraction)
 EPIC_ID=$(bd --no-daemon mol show <id> --json | jq -r '.proto_id // .epic_id // empty')
@@ -184,37 +201,84 @@ fi
 - Original branch untouched during work
 - Multiple molecules can run in parallel (different terminals)
 - Clean PR workflow with `--pr` flag
+- Use `commands/ralph-runner.sh` to wrap `/ralph-beads` so worktrees are cleaned on EXIT/INT/TERM.
 
-### Step 4: Auto-Detect Test Framework
+### Step 4: Auto-Detect Test Framework (Config-first, Monorepo-safe)
 
 ```bash
-# Detect framework and set test command
+# Allow configuration to override heuristics
+CONFIG_FILE=""
+for path in ".ralph-config.yaml" ".beads/ralph.yaml"; do
+  [ -f "$path" ] && CONFIG_FILE="$path" && break
+done
+
 FRAMEWORK=""
 TEST_CMD=""
+WORKDIR=""
 
-if [ -f "Cargo.toml" ]; then
-  FRAMEWORK="rust"
-  # Prefer nextest if available
-  if command -v cargo-nextest &>/dev/null; then
-    TEST_CMD="cargo nextest run"
+if [ -n "$CONFIG_FILE" ]; then
+  echo "Loading config from $CONFIG_FILE"
+  if command -v yq >/dev/null 2>&1; then
+    WORKDIR=$(yq -r '.working_dir // ""' "$CONFIG_FILE")
+    TEST_CMD=$(yq -r '.test_command // ""' "$CONFIG_FILE")
+    FRAMEWORK=$(yq -r '.framework // ""' "$CONFIG_FILE")
   else
-    TEST_CMD="cargo test"
+    CONFIG_JSON=$(python - "$CONFIG_FILE" <<'PY' 2>/dev/null || true)
+import json, sys
+try:
+    import yaml
+except ImportError:
+    sys.exit(1)
+data = yaml.safe_load(open(sys.argv[1])) or {}
+print(json.dumps(data))
+PY
+    if [ -n "$CONFIG_JSON" ]; then
+      WORKDIR=$(echo "$CONFIG_JSON" | jq -r '.working_dir // empty')
+      TEST_CMD=$(echo "$CONFIG_JSON" | jq -r '.test_command // empty')
+      FRAMEWORK=$(echo "$CONFIG_JSON" | jq -r '.framework // empty')
+    else
+      echo "WARNING: Config present but could not parse (install yq or PyYAML)"
+    fi
   fi
-elif [ -f "pyproject.toml" ] || [ -f "setup.py" ]; then
-  FRAMEWORK="python"
-  # Prefer pytest if available
-  if command -v pytest &>/dev/null || [ -f "pytest.ini" ]; then
-    TEST_CMD="pytest"
-  else
-    TEST_CMD="python -m unittest discover"
-  fi
-elif [ -f "package.json" ]; then
-  FRAMEWORK="node"
-  # Check for test script in package.json
-  if grep -q '"test"' package.json 2>/dev/null; then
-    TEST_CMD="npm test"
-  else
-    TEST_CMD="echo 'No test script defined'"
+fi
+
+# Fall back to molecule metadata
+if [ -z "$WORKDIR" ] && [ -n "$MOL_ID" ]; then
+  WORKDIR=$(bd --no-daemon mol show "$MOL_ID" --json | jq -r '.metadata.working_dir // empty')
+fi
+if [ -z "$TEST_CMD" ] && [ -n "$MOL_ID" ]; then
+  TEST_CMD=$(bd --no-daemon mol show "$MOL_ID" --json | jq -r '.metadata.test_command // empty')
+fi
+
+# Apply working directory scope if provided
+if [ -n "$WORKDIR" ]; then
+  echo "Scoping to working directory: $WORKDIR"
+  cd "$WORKDIR"
+fi
+
+# Detect framework and set test command only if not configured
+if [ -z "$FRAMEWORK" ] || [ -z "$TEST_CMD" ]; then
+  if [ -f "Cargo.toml" ]; then
+    FRAMEWORK="rust"
+    if command -v cargo-nextest &>/dev/null; then
+      TEST_CMD=${TEST_CMD:-"cargo nextest run"}
+    else
+      TEST_CMD=${TEST_CMD:-"cargo test"}
+    fi
+  elif [ -f "pyproject.toml" ] || [ -f "setup.py" ]; then
+    FRAMEWORK="python"
+    if command -v pytest &>/dev/null || [ -f "pytest.ini" ]; then
+      TEST_CMD=${TEST_CMD:-"pytest"}
+    else
+      TEST_CMD=${TEST_CMD:-"python -m unittest discover"}
+    fi
+  elif [ -f "package.json" ]; then
+    FRAMEWORK="node"
+    if grep -q '"test"' package.json 2>/dev/null; then
+      TEST_CMD=${TEST_CMD:-"npm test"}
+    else
+      TEST_CMD=${TEST_CMD:-"echo \"No test script defined\""}
+    fi
   fi
 fi
 
@@ -222,11 +286,15 @@ fi
 [ -n "$FRAMEWORK" ] && bd label add $EPIC_ID framework:$FRAMEWORK
 
 # Output detected configuration
+echo "Working dir: ${WORKDIR:-repo root}"
 echo "Test framework: ${FRAMEWORK:-none}"
 echo "Test command: ${TEST_CMD:-none}"
 ```
 
-**Note:** The detected `TEST_CMD` should be used in the building prompt for running tests.
+**Notes:**
+- Config (.ralph-config.yaml or .beads/ralph.yaml) wins over heuristics.
+- Molecule metadata (`metadata.test_command`, `metadata.working_dir`) is honored next.
+- The detected `TEST_CMD` should be used in the building prompt for running tests.
 
 ### Step 5: Auto-Detect Complexity & Scale Iterations
 
@@ -337,17 +405,17 @@ Do NOT implement code. Do NOT make commits.
 
 **1. FRESH CONTEXT LOAD:**
 ```bash
-bd prime || echo "bd prime unavailable, using direct queries"
+bd prime --focus <epic-id> || bd prime || echo "bd prime unavailable, using direct queries"
 ```
 This is your source of truth. Do NOT rely on conversation memory.
 
 **2. Check proto state (REQUIRED - fallback if bd prime fails):**
 ```bash
 # Verify epic still exists
-bd show <epic-id> || { echo "ERROR: Epic <epic-id> not found - may have been deleted"; exit 1; }
+bd show <epic-id> --json | jq . || { echo "ERROR: Epic <epic-id> not found - may have been deleted"; exit 1; }
 
 # Review iteration history
-bd comments list <epic-id>
+bd comments list <epic-id> --json | jq .
 ```
 
 **3. Study existing code (use subagents):**
@@ -356,7 +424,7 @@ Use Task tool with `Explore` agent.
 
 **4. Check existing tasks:**
 ```bash
-bd list --parent=<epic-id>
+bd list --parent=<epic-id> --json | jq .
 ```
 
 ## Planning Protocol
@@ -418,18 +486,18 @@ Output `<promise>PLAN_READY</promise>` ONLY when:
 - Gap analysis complete
 - All tasks created with acceptance criteria
 - Dependencies form valid DAG (verified below)
-- `bd list --parent=<epic-id>` shows complete structure
+- `bd list --parent=<epic-id> --json | jq .` shows complete structure
 
 **Validate dependency graph before completing:**
 ```bash
 # Check for cycles or invalid structure
-bd graph <epic-id>
+bd graph <epic-id> --detect-cycles --json | jq .
 
 # If cycles detected, fix with:
 # bd dep remove <task-id> <problematic-dep-id>
 
 # Verify task count and structure
-bd list --parent=<epic-id>
+bd list --parent=<epic-id> --json | jq .
 ```
 
 Then:
@@ -460,13 +528,13 @@ Ask beads: "What is the state of the world right now?"
 
 **1. FRESH CONTEXT LOAD:**
 ```bash
-bd prime || echo "bd prime unavailable, using direct queries"
+bd prime --focus <mol-id> || bd prime || echo "bd prime unavailable, using direct queries"
 ```
 This replaces your memory. Parse output to understand current state.
 
 **2. Verify molecule exists:**
 ```bash
-bd --no-daemon mol show <mol-id> || { echo "ERROR: Molecule not found"; exit 1; }
+bd --no-daemon mol show <mol-id> --json | jq . || { echo "ERROR: Molecule not found"; exit 1; }
 ```
 
 **3. Get next unblocked task:**
@@ -486,11 +554,17 @@ if [ "$PROGRESS" = "100" ]; then
     # → output <promise>DONE</promise>
 else
     echo "Progress: ${PROGRESS}% - running diagnostics..."
-    bd list --parent=<epic-id> --status=blocked
-    bd graph <epic-id> | grep -i cycle || true
-    bd list --parent=<epic-id> --status=open
+    bd list --parent=<epic-id> --status=blocked --json | jq .
+    CYCLES=$(bd graph <epic-id> --detect-cycles --json | jq '.cycles // []')
+    if echo "$CYCLES" | jq -e 'length > 0' >/dev/null 2>&1; then
+      echo "ERROR: Dependency cycle detected - resolve before continuing"
+      echo "$CYCLES" | jq .
+      exit 1
+    fi
+    bd list --parent=<epic-id> --status=open --json | jq .
     bd --no-daemon mol show <mol-id> --json | jq -r '.proto_id, .epic_id'
-    echo "Report blockers or cycles; pause if nothing is actionable."
+    echo "Report blockers; abort iteration if nothing is actionable."
+    exit 1
 fi
 ```
 
@@ -519,8 +593,8 @@ bd update $NEXT_TASK --status=blocked
 **Detecting previous failures:** Check comment history at iteration start:
 
 ```bash
-# Count previous failure attempts on this task
-ATTEMPTS=$(bd comments list $NEXT_TASK 2>/dev/null | grep -c '\[ATTEMPT:' || echo "0")
+# Count previous failure attempts on this task (JSON-safe)
+ATTEMPTS=$(bd comments list $NEXT_TASK --json 2>/dev/null | jq '[.[] | select(.body | contains("[ATTEMPT:"))] | length' || echo "0")
 
 # If already 1+ failures, next failure triggers circuit breaker
 if [ "$ATTEMPTS" -ge 1 ]; then
@@ -537,10 +611,10 @@ controls `bd ready` filtering; labels are just metadata.
 **Unblocking tasks (after manual intervention):**
 ```bash
 # See all blocked tasks
-bd list --parent=<epic-id> --status=blocked
+bd list --parent=<epic-id> --status=blocked --json | jq .
 
 # Review what went wrong
-bd comments list <blocked-task-id>
+bd comments list <blocked-task-id> --json | jq .
 
 # Unblock after fixing the root cause
 bd update <blocked-task-id> --status=open
@@ -582,7 +656,7 @@ For substantial discovered work that needs its own molecule context:
 # Create wisp from proto template
 WISP_ID=$(bd mol wisp <proto-id> --title="Refactor helper module")
 # Work within wisp context
-bd ready --mol $WISP_ID
+bd ready --mol $WISP_ID --json | jq .
 # Complete and squash
 bd mol squash $WISP_ID
 ```
@@ -607,7 +681,9 @@ Wisps:
    ```
 6. Commit after each meaningful change:
    ```bash
-   git add -A
+   git status --short
+   # Stage only intended files (avoid logs/temp artifacts)
+   git add <path1> <path2>  # or: git add $(git diff --name-only)
    git commit -m "<type>(<scope>): <description> (<epic-id>/<task-id>)"
    ```
 
@@ -647,7 +723,8 @@ esac
 
 1. Get acceptance criteria:
    ```bash
-   CRITERIA=$(bd show $NEXT_TASK | grep -A 100 "Description:" | head -50)
+   CRITERIA=$(bd show $NEXT_TASK --json | jq -r '.description // ""')
+   STYLE_GUIDE=$(cat .github/CONTRIBUTING.md 2>/dev/null || cat style_guide.md 2>/dev/null || true)
    ```
 
 2. Get the git diff:
@@ -662,6 +739,9 @@ esac
 
    ## Acceptance Criteria
    $CRITERIA
+
+   ## Style Guide (if any)
+   $STYLE_GUIDE
 
    ## Code Changes
    $DIFF
@@ -679,7 +759,7 @@ esac
      bd comments add $NEXT_TASK "[VALIDATION REJECTED] $FEEDBACK"
 
      # Check if this is 2nd rejection (circuit breaker)
-     REJECTIONS=$(bd comments list $NEXT_TASK | grep -c '\[VALIDATION REJECTED\]')
+     REJECTIONS=$(bd comments list $NEXT_TASK --json | jq '[.[] | select(.body | contains("[VALIDATION REJECTED]"))] | length')
      if [ "$REJECTIONS" -ge 2 ]; then
        bd update $NEXT_TASK --status=blocked
        bd comments add $NEXT_TASK "[CIRCUIT BREAKER] 2 validation rejections - marking blocked"
@@ -782,7 +862,7 @@ Do NOT close the epic. Preserve state:
 
 ```bash
 bd set-state <epic-id> mode=paused
-bd comments add <mol-id> "[PAUSED after N iterations] Progress: T%. Resume: /ralph-beads --mol <mol-id> --max-iterations 40"
+bd comments add <mol-id> "[PAUSED after N iterations] Progress: T%. Resume: /ralph-beads --resume <mol-id> --max-iterations 40"
 ```
 
 ## Troubleshooting: No Tasks Available
@@ -791,25 +871,25 @@ If `bd ready` returns empty but progress < 100%, diagnose the issue:
 
 **1. Check for blocked tasks:**
 ```bash
-bd list --parent=<epic-id> --status=blocked
+bd list --parent=<epic-id> --status=blocked --json | jq .
 ```
 If found: Review blocker reasons in comments, consider unblocking manually.
 
 **2. Check for dependency cycles:**
 ```bash
-bd graph <epic-id> | grep -i cycle
+bd graph <epic-id> --detect-cycles --json | jq .
 ```
 If found: Remove cyclic dependency with `bd dep remove`.
 
 **3. Check for missing tasks:**
 ```bash
-bd list --parent=<epic-id> --status=open
+bd list --parent=<epic-id> --status=open --json | jq .
 ```
 Compare count with expected. Tasks may have been accidentally closed.
 
 **4. Check molecule sync:**
 ```bash
-bd --no-daemon mol show <mol-id>
+bd --no-daemon mol show <mol-id> --json | jq .
 ```
 Verify molecule is linked to correct proto/epic.
 
@@ -838,12 +918,17 @@ Verify molecule is linked to correct proto/epic.
 /ralph-beads --mol <mol-id>
 ```
 
+**Fast resume (skip setup):**
+```bash
+/ralph-beads --resume <mol-id>
+```
+
 **Check progress:**
 ```bash
-bd --no-daemon mol progress <id>   # Completion %
-bd prime                           # Global context
-bd --no-daemon ready --mol <id>    # Molecule-scoped tasks
-bd graph <id>
+bd --no-daemon mol progress <id> --json | jq -r '.percent // 0'   # Completion %
+bd prime --focus <id>              # Molecule context (fallback: bd prime)
+bd --no-daemon ready --mol <id> --json | jq .    # Molecule-scoped tasks
+bd graph <id> --detect-cycles --json | jq .
 ```
 
 **Handle discovered work:**
