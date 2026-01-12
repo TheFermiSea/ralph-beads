@@ -9,6 +9,26 @@ NC='\033[0m' # No Color
 
 errors=0
 
+check_bd() {
+    if ! command -v bd >/dev/null 2>&1; then
+        echo -e "${RED}[MISSING]${NC} 'bd' CLI not found (install beads CLI)"
+        ((errors++)) || true
+        return
+    fi
+
+    BD_VERSION=$(bd --version 2>/dev/null || true)
+    if bd --no-daemon mol --help >/dev/null 2>&1; then
+        if [ -n "$BD_VERSION" ]; then
+            echo -e "${GREEN}[OK]${NC} bd CLI with molecule support detected ($BD_VERSION)"
+        else
+            echo -e "${GREEN}[OK]${NC} bd CLI with molecule support detected"
+        fi
+    else
+        echo -e "${RED}[MISSING]${NC} 'bd' CLI lacks 'mol' support. Upgrade to the latest beads CLI."
+        ((errors++)) || true
+    fi
+}
+
 check_plugin() {
     local plugin=$1
     if claude plugins list 2>/dev/null | grep -q "^$plugin"; then
@@ -20,6 +40,9 @@ check_plugin() {
 }
 
 echo "Checking ralph-beads dependencies..."
+echo
+
+check_bd
 echo
 
 check_plugin "beads"

@@ -485,10 +485,12 @@ if [ "$PROGRESS" = "100" ]; then
     echo "All tasks complete"
     # → output <promise>DONE</promise>
 else
-    # Not complete but nothing ready - check for blockers
-    echo "Progress: ${PROGRESS}% - checking blockers..."
+    echo "Progress: ${PROGRESS}% - running diagnostics..."
     bd list --parent=<epic-id> --status=blocked
-    # Report what's blocking and why
+    bd graph <epic-id> | grep -i cycle || true
+    bd list --parent=<epic-id> --status=open
+    bd --no-daemon mol show <mol-id> --json | jq -r '.proto_id, .epic_id'
+    echo "Report blockers or cycles; pause if nothing is actionable."
 fi
 ```
 
