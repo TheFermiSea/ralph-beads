@@ -3,6 +3,7 @@ import { tool } from "@opencode-ai/plugin";
 import { SessionState, Complexity, WorkflowMode } from "./types";
 import { BeadsClient } from "./beads-client";
 import { getPlanningPrompt, getBuildingPrompt } from "./prompts";
+import { createClient, fallback } from "./rust-client";
 
 // --- State Management ---
 const sessions = new Map<string, SessionState>();
@@ -334,16 +335,19 @@ Resume workflow with: /ralph-beads --resume ${state.moleculeId || state.epicId}
         async execute(args, ctx) {
            const beads = new BeadsClient($);
            const sessionId = ctx.sessionID;
-           
+
            try {
                await beads.info();
            } catch (e) {
                return "ERROR: Beads not initialized. Run 'bd init' first.";
            }
 
+           // Initialize Rust client (with fallback to TypeScript if unavailable)
+           const rustClient = await createClient({ $ });
+
            let mode: WorkflowMode = (args.mode as WorkflowMode) || 'build';
            const task = args.task;
-           
+
            if (args.resume) {
                mode = 'building';
                args.mol = args.resume;
@@ -376,7 +380,7 @@ Resume workflow with: /ralph-beads --resume ${state.moleculeId || state.epicId}
                        labels: ['ralph', 'template']
                    });
                    epicId = epic.id;
-                   
+
                    if (args.mode === 'plan') {
                        mode = 'planning';
                        await beads.setState(epicId, 'mode', 'planning');
@@ -400,40 +404,52 @@ Resume workflow with: /ralph-beads --resume ${state.moleculeId || state.epicId}
                await beads.setState(epicId, 'mode', 'planning');
            }
 
+           // Use Rust CLI for framework detection (with fallback)
            let framework = "";
            let testCmd = "";
-           if (await fileExists("Cargo.toml")) {
-               framework = "rust";
-               testCmd = "cargo test"; 
-           } else if (await fileExists("package.json")) {
-               framework = "node";
-               testCmd = "npm test";
-           } else if (await fileExists("pyproject.toml") || await fileExists("setup.py")) {
-               framework = "python";
-               testCmd = "pytest";
+           try {
+               const fwResult = await rustClient.detectFramework(".");
+               framework = fwResult.framework;
+               testCmd = fwResult.test_command;
+           } catch {
+               // Fallback to simple file checks
+               if (await fileExists("Cargo.toml")) {
+                   framework = "rust";
+                   testCmd = "cargo test";
+               } else if (await fileExists("package.json")) {
+                   framework = "node";
+                   testCmd = "npm test";
+               } else if (await fileExists("pyproject.toml") || await fileExists("setup.py")) {
+                   framework = "python";
+                   testCmd = "pytest";
+               }
            }
-           
+
+           // Use Rust CLI for complexity detection (with fallback)
            let complexity: Complexity = (args.complexity as Complexity) || 'standard';
            if (!args.complexity) {
-               const t = task.toLowerCase();
-               if (/fix typo|update comment|rename|spelling|whitespace/.test(t)) complexity = 'trivial';
-               else if (/add (button|toggle|flag)|toggle|remove unused|update (version|dep)/.test(t)) complexity = 'simple';
-               else if (/auth|security|payment|migration|credential/.test(t)) complexity = 'critical';
+               try {
+                   complexity = await rustClient.detectComplexity(task);
+               } catch {
+                   // Fallback to TypeScript implementation
+                   complexity = fallback.detectComplexity(task);
+               }
            }
-           
+
+           // Use Rust CLI for iteration calculation (with fallback)
            let maxIter = args.max_iterations;
            if (!maxIter) {
-               const isPlan = mode === 'planning';
-               switch (complexity) {
-                   case 'trivial': maxIter = isPlan ? 2 : 5; break;
-                   case 'simple': maxIter = isPlan ? 3 : 10; break;
-                   case 'standard': maxIter = isPlan ? 5 : 20; break;
-                   case 'critical': maxIter = isPlan ? 8 : 40; break;
+               try {
+                   maxIter = await rustClient.calcIterations(mode, complexity);
+               } catch {
+                   // Fallback to TypeScript implementation
+                   maxIter = fallback.calcIterations(mode, complexity);
                }
            }
 
            if (args.dry_run) {
-               return `DRY RUN:\nMode: ${mode}\nEpic: ${epicId}\nMolecule: ${molId || 'N/A'}\nComplexity: ${complexity}\nMax Iterations: ${maxIter}\nTest Framework: ${framework}`;
+               const usingRust = rustClient.isRustAvailable ? "yes" : "no (fallback)";
+               return `DRY RUN:\nMode: ${mode}\nEpic: ${epicId}\nMolecule: ${molId || 'N/A'}\nComplexity: ${complexity}\nMax Iterations: ${maxIter}\nTest Framework: ${framework}\nUsing Rust CLI: ${usingRust}`;
            }
 
            const state = getState(sessionId);
@@ -453,18 +469,18 @@ Resume workflow with: /ralph-beads --resume ${state.moleculeId || state.epicId}
                }
                const branchName = `molecule/${molId}`;
                const worktreePath = `../worktree-${molId}`;
-               
+
                const branchExists = (await $`git rev-parse --verify ${branchName}`.nothrow().quiet()).exitCode === 0;
                if (branchExists) {
                    await $`git worktree add ${worktreePath} ${branchName}`.quiet();
                } else {
                    await $`git worktree add ${worktreePath} -b ${branchName}`.quiet();
                }
-               
+
                state.worktreePath = worktreePath;
                state.branchName = branchName;
                state.createPr = args.pr;
-               
+
                const prompt = getBuildingPrompt(epicId, molId!, task, testCmd);
                return `*** WORKTREE SETUP ***\nCreated isolated worktree at: ${worktreePath}\n\nPLEASE RUN THIS COMMAND FIRST:\ncd ${worktreePath}\n\n` + prompt;
            }

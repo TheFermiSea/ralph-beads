@@ -32,6 +32,43 @@ This architecture eliminates context drift—the agent doesn't need to "remember
 | `commands/ralph-cancel.md` | Graceful loop cancellation |
 | `hooks/` | Stop hook for loop control (inherits from ralph-loop) |
 | `scripts/` | Helper scripts for beads operations |
+| `ralph-beads-cli/` | Rust CLI for high-performance operations |
+| `.opencode/plugin/` | OpenCode TypeScript plugin integration |
+
+### Hybrid Architecture (Rust + TypeScript)
+
+The plugin uses a **hybrid architecture** with Rust handling performance-critical operations:
+
+```
+┌─────────────────────┐           ┌──────────────────────┐
+│ TypeScript Plugin   │  subprocess │ Rust CLI             │
+│ (ralph-beads.ts)    │ ──────────→ │ (ralph-beads-cli)    │
+│                     │           │                      │
+│ - Tool definitions  │           │ - Complexity detect  │
+│ - Hook handlers     │  fallback │ - Framework detect   │
+│ - Event routing     │ ←──────── │ - Iteration calc     │
+│ - Beads client      │           │ - State management   │
+└─────────────────────┘           └──────────────────────┘
+```
+
+**Why Hybrid?**
+- Plugin systems (Claude Code, OpenCode) require TypeScript/Markdown
+- Rust provides: type safety, compiled performance, better regex
+- Graceful fallback: TypeScript implementations if Rust unavailable
+
+**Building the Rust CLI:**
+```bash
+cd ralph-beads-cli
+cargo build --release
+# Add to PATH or copy to ~/.local/bin/
+```
+
+**TypeScript automatically uses Rust when available:**
+```typescript
+const client = await createClient({ $ });
+const complexity = await client.detectComplexity(task);
+// Uses Rust if available, falls back to TypeScript
+```
 
 ### Beads Integration Points
 
@@ -226,6 +263,22 @@ bd comments add $EPIC "[iter:$N] [task:$TASK] [tests:$PASS/$FAIL/$SKIP] Summary:
 ralph-beads/
 ├── .claude-plugin/
 │   └── plugin.json          # Plugin manifest
+├── .opencode/
+│   └── plugin/
+│       ├── ralph-beads.ts   # OpenCode plugin entry
+│       ├── beads-client.ts  # Beads CLI wrapper
+│       ├── rust-client.ts   # Rust CLI wrapper
+│       ├── prompts.ts       # Prompt templates
+│       └── types.ts         # TypeScript types
+├── ralph-beads-cli/         # Rust CLI (hybrid architecture)
+│   ├── src/
+│   │   ├── main.rs          # CLI entry point
+│   │   ├── complexity.rs    # Complexity detection
+│   │   ├── framework.rs     # Framework detection
+│   │   ├── iterations.rs    # Iteration calculation
+│   │   └── state.rs         # State management
+│   ├── Cargo.toml
+│   └── README.md
 ├── commands/
 │   ├── ralph-beads.md       # Main command
 │   ├── ralph-status.md      # Status display
