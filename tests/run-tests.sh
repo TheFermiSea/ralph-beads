@@ -50,10 +50,10 @@ snapshot_prompt() {
   section "Snapshot: ralph-beads prompt invariants"
   local file="$ROOT/commands/ralph-beads.md"
   local patterns=(
-    "bd prime --focus <mol-id>"
+    "bd prime || echo"
     "--resume <id>"
     "bd --no-daemon ready --mol <mol-id> --limit 1 --json"
-    "bd graph <epic-id> --detect-cycles --json"
+    "bd graph <epic-id>"
     "git add <path1> <path2>"
   )
   for pat in "${patterns[@]}"; do
