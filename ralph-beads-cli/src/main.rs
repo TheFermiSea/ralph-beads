@@ -1,3 +1,5 @@
+mod activity;
+mod beads_state;
 mod complexity;
 mod framework;
 mod health;
@@ -9,6 +11,10 @@ mod state;
 use clap::{Parser, Subcommand};
 use serde_json::json;
 
+use activity::{
+    format_activity_text, get_activity_for_issue, get_activity_since, get_recent_activity,
+    stream_activity,
+};
 use complexity::{detect_complexity, Complexity};
 use framework::detect_framework;
 use health::HealthChecker;
@@ -109,6 +115,18 @@ enum Commands {
         #[command(subcommand)]
         action: MemoryAction,
     },
+
+    /// Beads state dimension operations (wraps bd set-state/state)
+    BeadsState {
+        #[command(subcommand)]
+        action: BeadsStateAction,
+    },
+
+    /// Activity feed operations for real-time progress monitoring
+    Activity {
+        #[command(subcommand)]
+        action: ActivityAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -208,6 +226,79 @@ enum MemoryAction {
         /// Optional epic ID to filter by
         #[arg(short, long)]
         epic_id: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum BeadsStateAction {
+    /// Set a state dimension on an issue
+    Set {
+        /// Issue ID
+        issue_id: String,
+
+        /// Dimension to set (mode or health)
+        dimension: String,
+
+        /// Value to set
+        value: String,
+
+        /// Optional reason for the state change
+        #[arg(short, long)]
+        reason: Option<String>,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Get state from an issue (specific dimension or all)
+    Get {
+        /// Issue ID
+        issue_id: String,
+
+        /// Dimension to get (mode or health). If omitted, gets all dimensions
+        dimension: Option<String>,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "json")]
+        format: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum ActivityAction {
+    /// List recent activity events
+    List {
+        /// Issue ID or prefix to filter by (uses --mol flag)
+        #[arg(short, long)]
+        issue: Option<String>,
+
+        /// Maximum number of events to return
+        #[arg(short, long, default_value = "100")]
+        limit: usize,
+
+        /// Show events since duration (e.g., "5m", "1h", "30s")
+        #[arg(short, long)]
+        since: Option<String>,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Stream activity events in real-time (follows)
+    Follow {
+        /// Issue ID or prefix to filter by
+        #[arg(short, long)]
+        issue: Option<String>,
+
+        /// Maximum number of events to receive before stopping (0 = unlimited)
+        #[arg(short, long, default_value = "0")]
+        limit: usize,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
     },
 }
 
@@ -519,7 +610,8 @@ fn main() {
                 original_error,
             } => {
                 let mut memory = ProceduralMemory::new(&log_file);
-                let details = original_error.unwrap_or_else(|| "No original error provided".to_string());
+                let details =
+                    original_error.unwrap_or_else(|| "No original error provided".to_string());
                 let entry = memory::MemoryEntry::workaround(&description, &details);
 
                 if let Err(e) = memory.append(entry) {
@@ -556,6 +648,182 @@ fn main() {
                 let memory = ProceduralMemory::new(&log_file);
                 let context = memory.compile_context(epic_id.as_deref());
                 println!("{}", context);
+            }
+        },
+
+        Commands::BeadsState { action } => match action {
+            BeadsStateAction::Set {
+                issue_id,
+                dimension,
+                value,
+                reason,
+                format,
+            } => match beads_state::set_state(&issue_id, &dimension, &value, reason.as_deref()) {
+                Ok(()) => {
+                    let result = json!({
+                        "success": true,
+                        "issue_id": issue_id,
+                        "dimension": dimension,
+                        "value": value
+                    });
+                    if format == "json" {
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        println!("Set {}={} on {}", dimension, value, issue_id);
+                    }
+                }
+                Err(e) => {
+                    if format == "json" {
+                        let result = json!({
+                            "success": false,
+                            "issue_id": issue_id,
+                            "dimension": dimension,
+                            "error": e.to_string()
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        eprintln!("Error: {}", e);
+                    }
+                    std::process::exit(1);
+                }
+            },
+
+            BeadsStateAction::Get {
+                issue_id,
+                dimension,
+                format,
+            } => {
+                if let Some(dim) = dimension {
+                    // Get specific dimension
+                    match beads_state::get_state(&issue_id, &dim) {
+                        Ok(Some(value)) => {
+                            if format == "json" {
+                                let result = json!({
+                                    "success": true,
+                                    "issue_id": issue_id,
+                                    "dimension": dim,
+                                    "value": value
+                                });
+                                println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                            } else {
+                                println!("{}={}", dim, value);
+                            }
+                        }
+                        Ok(None) => {
+                            if format == "json" {
+                                let result = json!({
+                                    "success": true,
+                                    "issue_id": issue_id,
+                                    "dimension": dim,
+                                    "value": null
+                                });
+                                println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                            } else {
+                                println!("{} is not set", dim);
+                            }
+                        }
+                        Err(e) => {
+                            if format == "json" {
+                                let result = json!({
+                                    "success": false,
+                                    "issue_id": issue_id,
+                                    "dimension": dim,
+                                    "error": e.to_string()
+                                });
+                                println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                            } else {
+                                eprintln!("Error: {}", e);
+                            }
+                            std::process::exit(1);
+                        }
+                    }
+                } else {
+                    // Get all dimensions
+                    match beads_state::get_all_state(&issue_id) {
+                        Ok(state) => {
+                            if format == "json" {
+                                let result = json!({
+                                    "success": true,
+                                    "issue_id": issue_id,
+                                    "state": state
+                                });
+                                println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                            } else if state.is_empty() {
+                                println!("No state dimensions set on {}", issue_id);
+                            } else {
+                                println!("State for {}:", issue_id);
+                                for (dim, val) in &state {
+                                    println!("  {}={}", dim, val);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            if format == "json" {
+                                let result = json!({
+                                    "success": false,
+                                    "issue_id": issue_id,
+                                    "error": e.to_string()
+                                });
+                                println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                            } else {
+                                eprintln!("Error: {}", e);
+                            }
+                            std::process::exit(1);
+                        }
+                    }
+                }
+            }
+        },
+
+        Commands::Activity { action } => match action {
+            ActivityAction::List {
+                issue,
+                limit,
+                since,
+                format,
+            } => {
+                let events = if let Some(since_str) = since {
+                    match get_activity_since(&since_str, issue.as_deref()) {
+                        Ok(e) => e,
+                        Err(e) => {
+                            eprintln!("Error getting activity: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                } else if let Some(issue_id) = &issue {
+                    match get_activity_for_issue(issue_id, limit) {
+                        Ok(e) => e,
+                        Err(e) => {
+                            eprintln!("Error getting activity: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                } else {
+                    match get_recent_activity(limit) {
+                        Ok(e) => e,
+                        Err(e) => {
+                            eprintln!("Error getting activity: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                };
+
+                if format == "json" {
+                    println!("{}", serde_json::to_string_pretty(&events).unwrap());
+                } else {
+                    print!("{}", format_activity_text(&events));
+                }
+            }
+
+            ActivityAction::Follow {
+                issue,
+                limit,
+                format,
+            } => {
+                if let Err(e) = stream_activity(issue.as_deref(), limit, &format) {
+                    eprintln!("Error streaming activity: {}", e);
+                    std::process::exit(1);
+                }
             }
         },
     }

@@ -120,69 +120,154 @@ impl SecurityValidator {
         // === SAFE COMMANDS (read-only, informational) ===
         let safe = [
             // File inspection
-            "ls", "cat", "head", "tail", "wc", "file", "stat",
+            "ls",
+            "cat",
+            "head",
+            "tail",
+            "wc",
+            "file",
+            "stat",
             // Search
-            "grep", "rg", "fd", "find", "locate", "which", "whereis",
+            "grep",
+            "rg",
+            "fd",
+            "find",
+            "locate",
+            "which",
+            "whereis",
             // Git (read)
-            "git status", "git log", "git diff", "git show", "git branch",
-            "git remote", "git tag", "git stash list",
+            "git status",
+            "git log",
+            "git diff",
+            "git show",
+            "git branch",
+            "git remote",
+            "git tag",
+            "git stash list",
             // Development (read)
-            "cargo check", "cargo clippy", "cargo fmt --check",
-            "npm list", "npm outdated", "npm audit",
-            "pip list", "pip show", "pip check",
+            "cargo check",
+            "cargo clippy",
+            "cargo fmt --check",
+            "npm list",
+            "npm outdated",
+            "npm audit",
+            "pip list",
+            "pip show",
+            "pip check",
             "pytest --collect-only",
             // System info
-            "pwd", "whoami", "date", "uname", "hostname",
-            "df", "du", "free", "uptime", "ps", "top",
+            "pwd",
+            "whoami",
+            "date",
+            "uname",
+            "hostname",
+            "df",
+            "du",
+            "free",
+            "uptime",
+            "ps",
+            "top",
             // Beads (read)
-            "bd info", "bd list", "bd show", "bd ready", "bd graph",
-            "bd prime", "bd stats", "bd comments list",
+            "bd info",
+            "bd list",
+            "bd show",
+            "bd ready",
+            "bd graph",
+            "bd prime",
+            "bd stats",
+            "bd comments list",
         ];
 
         // === LOW RISK COMMANDS (local modifications) ===
         let low_risk = [
             // Git (write - local)
-            "git add", "git commit", "git checkout", "git branch",
-            "git merge", "git rebase", "git stash", "git reset",
+            "git add",
+            "git commit",
+            "git checkout",
+            "git branch",
+            "git merge",
+            "git rebase",
+            "git stash",
+            "git reset",
             // Development (build/test)
-            "cargo build", "cargo test", "cargo run", "cargo fmt",
-            "npm install", "npm test", "npm run", "npm build",
-            "pip install", "pytest", "python",
+            "cargo build",
+            "cargo test",
+            "cargo run",
+            "cargo fmt",
+            "npm install",
+            "npm test",
+            "npm run",
+            "npm build",
+            "pip install",
+            "pytest",
+            "python",
             // File operations (local)
-            "mkdir", "touch", "cp", "mv",
+            "mkdir",
+            "touch",
+            "cp",
+            "mv",
             // Beads (write)
-            "bd create", "bd update", "bd close", "bd sync",
-            "bd comments add", "bd dep add", "bd label",
+            "bd create",
+            "bd update",
+            "bd close",
+            "bd sync",
+            "bd comments add",
+            "bd dep add",
+            "bd label",
         ];
 
         // === MEDIUM RISK COMMANDS (require caution) ===
         let medium_risk = [
             // Git (remote)
-            "git push", "git pull", "git fetch", "git clone",
+            "git push",
+            "git pull",
+            "git fetch",
+            "git clone",
             // Package management
-            "npm publish", "cargo publish", "pip upload",
+            "npm publish",
+            "cargo publish",
+            "pip upload",
             // Process management
-            "kill", "pkill", "killall",
+            "kill",
+            "pkill",
+            "killall",
         ];
 
         // === BLOCKED PATTERNS ===
         let blocked = [
             // Destructive
-            "rm -rf /", "rm -rf ~", "rm -rf /*",
-            "> /dev/sd", "dd if=", "mkfs",
+            "rm -rf /",
+            "rm -rf ~",
+            "rm -rf /*",
+            "> /dev/sd",
+            "dd if=",
+            "mkfs",
             // System modification
-            "sudo", "su -", "chmod 777", "chown root",
+            "sudo",
+            "su -",
+            "chmod 777",
+            "chown root",
             // Network (dangerous)
-            "curl | sh", "wget | sh", "curl | bash", "wget | bash",
+            "curl | sh",
+            "wget | sh",
+            "curl | bash",
+            "wget | bash",
             // Credential exposure
-            "echo $PASSWORD", "echo $SECRET", "echo $API_KEY",
-            "cat ~/.ssh", "cat /etc/shadow", "cat /etc/passwd",
+            "echo $PASSWORD",
+            "echo $SECRET",
+            "echo $API_KEY",
+            "cat ~/.ssh",
+            "cat /etc/shadow",
+            "cat /etc/passwd",
             // History manipulation
-            "history -c", "shred", "wipe",
+            "history -c",
+            "shred",
+            "wipe",
             // Fork bombs
             ":(){ :|:& };:",
             // Reverse shells
-            "nc -e", "bash -i >& /dev/tcp",
+            "nc -e",
+            "bash -i >& /dev/tcp",
         ];
 
         for cmd in safe {
@@ -309,7 +394,9 @@ impl SecurityValidator {
         }
 
         // Force push (can lose history)
-        if cmd_lower.contains("git push") && (cmd_lower.contains("-f") || cmd_lower.contains("--force")) {
+        if cmd_lower.contains("git push")
+            && (cmd_lower.contains("-f") || cmd_lower.contains("--force"))
+        {
             return Some(
                 ValidationResult::blocked(RiskLevel::High, "Force push can lose history")
                     .with_alternative("Use git push --force-with-lease for safer force push"),
@@ -319,8 +406,11 @@ impl SecurityValidator {
         // Hard reset (can lose work)
         if cmd_lower.contains("git reset --hard") {
             return Some(
-                ValidationResult::blocked(RiskLevel::High, "Hard reset discards uncommitted changes")
-                    .with_alternative("Commit or stash changes first, or use git reset --soft"),
+                ValidationResult::blocked(
+                    RiskLevel::High,
+                    "Hard reset discards uncommitted changes",
+                )
+                .with_alternative("Commit or stash changes first, or use git reset --soft"),
             );
         }
 
@@ -417,11 +507,26 @@ fn is_safe_deletion_target(command: &str) -> bool {
     // Patterns that indicate safe deletion targets (build artifacts, caches, etc.)
     // Include both with and without trailing slashes for flexibility
     let safe_patterns = [
-        "target/", "target", "node_modules/", "node_modules",
-        "dist/", "dist", "build/", "__pycache__/", "__pycache__",
-        ".pytest_cache/", ".pytest_cache", ".mypy_cache/", ".mypy_cache",
-        "*.pyc", "*.o", "*.a",
-        ".git/hooks/", ".coverage", "coverage/", "coverage",
+        "target/",
+        "target",
+        "node_modules/",
+        "node_modules",
+        "dist/",
+        "dist",
+        "build/",
+        "__pycache__/",
+        "__pycache__",
+        ".pytest_cache/",
+        ".pytest_cache",
+        ".mypy_cache/",
+        ".mypy_cache",
+        "*.pyc",
+        "*.o",
+        "*.a",
+        ".git/hooks/",
+        ".coverage",
+        "coverage/",
+        "coverage",
     ];
 
     for pattern in safe_patterns {
