@@ -84,6 +84,9 @@ section "Safety verification"
 smoke_runner || FAILURES=1
 snapshot_prompt || FAILURES=1
 
+section "OpenCode E2E structure"
+"$ROOT/tests/e2e-opencode.sh" || FAILURES=1
+
 if [ "$FAILURES" -ne 0 ]; then
   echo "Tests completed with failures."
   exit 1
