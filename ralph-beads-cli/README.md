@@ -6,6 +6,9 @@ Rust CLI helper for the ralph-beads plugin. Provides high-performance implementa
 - **Framework detection** - Detect test framework from project files
 - **Iteration calculation** - Calculate max iterations based on mode and complexity
 - **State management** - Manage session state for workflow execution
+- **Health checks** - Pre-execution diagnostics (git, beads, disk, etc.)
+- **Security validation** - Command allowlist with risk assessment
+- **Procedural memory** - Failure tracking and pattern detection
 
 ## Installation
 
@@ -120,6 +123,108 @@ ralph-beads-cli state should-continue \
   --state '{"session_id":"test","mode":"building",...}'
 ```
 
+### Health Checks
+
+Run pre-execution diagnostics:
+
+```bash
+# Check current directory
+ralph-beads-cli health
+
+# Check specific directory
+ralph-beads-cli health --dir /path/to/project --format json
+```
+
+**Checks performed:**
+
+| Check | What it validates |
+|-------|-------------------|
+| git | Git installed and repo valid |
+| beads | Beads CLI installed and initialized |
+| directory | Project directory exists and writable |
+| git_status | Uncommitted changes (warns if >0) |
+| rust | Cargo check passes (if Cargo.toml exists) |
+| node | node_modules present (if package.json exists) |
+| python | Virtual env present (if pyproject.toml exists) |
+| disk | Available disk space |
+
+### Security Validation
+
+Validate commands against security rules:
+
+```bash
+# Safe command
+ralph-beads-cli validate --command "cargo test"
+# ✓ Allowed: true, Risk: Safe
+
+# Dangerous command
+ralph-beads-cli validate --command "git push --force origin main"
+# ✗ Allowed: false, Risk: High
+# Alternative: Use git push --force-with-lease
+
+# With project root for path validation
+ralph-beads-cli validate --command "cat /etc/passwd" --project-root /my/project
+# ✗ Allowed: false, Risk: Medium (path outside project)
+```
+
+**Risk Levels:**
+
+| Level | Description |
+|-------|-------------|
+| `safe` | Read-only, no side effects |
+| `low` | Local modifications, reversible |
+| `medium` | External calls, requires caution |
+| `high` | Destructive, system-wide effects |
+| `blocked` | Never allowed (matches blocked pattern) |
+
+### Procedural Memory
+
+Track failures and workarounds:
+
+```bash
+# Record success
+ralph-beads-cli memory success \
+  --log-file .beads/memory.jsonl \
+  --task-id task-001 \
+  --description "Fixed login bug"
+
+# Record failure
+ralph-beads-cli memory failure \
+  --log-file .beads/memory.jsonl \
+  --task-id task-002 \
+  --error "Connection timed out after 30s"
+
+# Record workaround
+ralph-beads-cli memory workaround \
+  --log-file .beads/memory.jsonl \
+  --task-id task-002 \
+  --description "Increased timeout to 60s" \
+  --original-error "timeout"
+
+# Check failure count for task
+ralph-beads-cli memory failure-count \
+  --log-file .beads/memory.jsonl \
+  --task-id task-002
+
+# Get active failure patterns
+ralph-beads-cli memory patterns --log-file .beads/memory.jsonl
+
+# Compile context summary
+ralph-beads-cli memory compile \
+  --log-file .beads/memory.jsonl \
+  --epic-id epic-123
+```
+
+**Recognized Error Patterns:**
+
+| Pattern | Matched Terms | Suggestion |
+|---------|---------------|------------|
+| `timeout` | timeout, timed out | Increase timeout or check network |
+| `resource_not_found` | not found | Verify path/ID exists |
+| `permission_denied` | permission denied | Check file permissions |
+| `compile_error` | compile + error | Fix errors before tests |
+| `test_failure` | test failed, assertion | Review test expectations |
+
 ### Info
 
 Get version and capabilities:
@@ -179,7 +284,10 @@ ralph-beads-cli/
 │   ├── complexity.rs  # Complexity detection logic
 │   ├── framework.rs   # Framework detection logic
 │   ├── iterations.rs  # Iteration calculation
-│   └── state.rs       # Session state management
+│   ├── state.rs       # Session state management
+│   ├── health.rs      # Pre-execution health checks
+│   ├── security.rs    # Command allowlist & validation
+│   └── memory.rs      # Procedural memory (failure tracking)
 ├── Cargo.toml
 └── README.md
 ```
