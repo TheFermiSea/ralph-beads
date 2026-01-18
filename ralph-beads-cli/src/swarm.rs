@@ -527,9 +527,7 @@ pub fn report_task_complete(
     worker_id: &str,
 ) -> Result<(), SwarmError> {
     // Close the task
-    let output = Command::new("bd")
-        .args(["close", task_id])
-        .output()?;
+    let output = Command::new("bd").args(["close", task_id]).output()?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -550,7 +548,12 @@ pub fn report_task_complete(
     if status.tasks_remaining == 0 {
         // All tasks done - add completion note to epic
         let _ = Command::new("bd")
-            .args(["comments", "add", epic_id, "Swarm completed: all tasks done"])
+            .args([
+                "comments",
+                "add",
+                epic_id,
+                "Swarm completed: all tasks done",
+            ])
             .output();
     }
 
@@ -870,10 +873,8 @@ fn parse_swarm_list(json_str: &str) -> Result<Vec<SwarmState>, SwarmError> {
                 .filter_map(|item| {
                     let epic_id = item.get("epic_id")?.as_str()?;
 
-                    let completed = item
-                        .get("completed")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0) as usize;
+                    let completed =
+                        item.get("completed").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
 
                     let total = item.get("total").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
 
@@ -893,7 +894,10 @@ fn parse_swarm_list(json_str: &str) -> Result<Vec<SwarmState>, SwarmError> {
 
                     Some(SwarmState {
                         status,
-                        swarm_id: item.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        swarm_id: item
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
                         epic_id: epic_id.to_string(),
                         active_workers: Vec::new(),
                         tasks_completed: completed,
@@ -951,10 +955,7 @@ mod tests {
     #[test]
     fn test_swarm_status_from_str() {
         assert_eq!(SwarmStatus::from_str("idle").unwrap(), SwarmStatus::Idle);
-        assert_eq!(
-            SwarmStatus::from_str("pending").unwrap(),
-            SwarmStatus::Idle
-        );
+        assert_eq!(SwarmStatus::from_str("pending").unwrap(), SwarmStatus::Idle);
         assert_eq!(
             SwarmStatus::from_str("running").unwrap(),
             SwarmStatus::Running
@@ -971,12 +972,18 @@ mod tests {
             SwarmStatus::from_str("completed").unwrap(),
             SwarmStatus::Completed
         );
-        assert_eq!(SwarmStatus::from_str("done").unwrap(), SwarmStatus::Completed);
+        assert_eq!(
+            SwarmStatus::from_str("done").unwrap(),
+            SwarmStatus::Completed
+        );
         assert_eq!(
             SwarmStatus::from_str("finished").unwrap(),
             SwarmStatus::Completed
         );
-        assert_eq!(SwarmStatus::from_str("failed").unwrap(), SwarmStatus::Failed);
+        assert_eq!(
+            SwarmStatus::from_str("failed").unwrap(),
+            SwarmStatus::Failed
+        );
         assert_eq!(SwarmStatus::from_str("error").unwrap(), SwarmStatus::Failed);
         assert_eq!(
             SwarmStatus::from_str("stopped").unwrap(),

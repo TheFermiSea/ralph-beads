@@ -275,9 +275,9 @@ pub fn create_gate(gate_type: GateType, config: GateConfig) -> Result<String, Ga
     ];
 
     // Add title
-    let title = config.title.unwrap_or_else(|| {
-        format!("Gate: {} approval", gate_type)
-    });
+    let title = config
+        .title
+        .unwrap_or_else(|| format!("Gate: {} approval", gate_type));
     args.push(format!("--title={}", title));
 
     // Build description with gate type info
@@ -319,9 +319,7 @@ pub fn create_gate(gate_type: GateType, config: GateConfig) -> Result<String, Ga
     // Add gate type as label
     args.push(format!("--labels=gate:{}", gate_type));
 
-    let output = Command::new("bd")
-        .args(&args)
-        .output()?;
+    let output = Command::new("bd").args(&args).output()?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -364,7 +362,8 @@ pub fn check_gate(gate_id: &str) -> Result<GateStatus, GateError> {
     let gate: serde_json::Value = serde_json::from_str(&stdout)?;
 
     // Check status field - beads uses "status" with values like "open", "closed"
-    let status_str = gate.get("status")
+    let status_str = gate
+        .get("status")
         .and_then(|v| v.as_str())
         .unwrap_or("pending");
 
@@ -395,9 +394,7 @@ pub fn approve_gate(gate_id: &str, reason: Option<&str>) -> Result<(), GateError
         args.push(&reason_string);
     }
 
-    let output = Command::new("bd")
-        .args(&args)
-        .output()?;
+    let output = Command::new("bd").args(&args).output()?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -425,9 +422,7 @@ pub fn list_gates(issue_id: Option<&str>, include_closed: bool) -> Result<Vec<Ga
         args.push("--all");
     }
 
-    let output = Command::new("bd")
-        .args(&args)
-        .output()?;
+    let output = Command::new("bd").args(&args).output()?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -507,9 +502,7 @@ pub fn wait_for_gate(
 
     loop {
         // Run gate check to evaluate conditions
-        let _ = Command::new("bd")
-            .args(["gate", "check"])
-            .output();
+        let _ = Command::new("bd").args(["gate", "check"]).output();
 
         let status = check_gate(gate_id)?;
 
@@ -549,9 +542,7 @@ pub fn evaluate_gates(
         args.push("--dry-run");
     }
 
-    let output = Command::new("bd")
-        .args(&args)
-        .output()?;
+    let output = Command::new("bd").args(&args).output()?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -595,7 +586,8 @@ pub fn add_waiter(gate_id: &str, waiter: &str) -> Result<(), GateError> {
 
 /// Parse a gate from JSON value returned by beads
 fn parse_gate_from_json(json: &serde_json::Value) -> Result<Gate, GateError> {
-    let id = json.get("id")
+    let id = json
+        .get("id")
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
@@ -604,7 +596,8 @@ fn parse_gate_from_json(json: &serde_json::Value) -> Result<Gate, GateError> {
     let gate_type = extract_gate_type(json);
 
     // Parse status
-    let status_str = json.get("status")
+    let status_str = json
+        .get("status")
         .and_then(|v| v.as_str())
         .unwrap_or("open");
 
@@ -615,30 +608,37 @@ fn parse_gate_from_json(json: &serde_json::Value) -> Result<Gate, GateError> {
         _ => GateStatus::Pending,
     };
 
-    let issue_id = json.get("parent")
+    let issue_id = json
+        .get("parent")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    let created_at = json.get("created_at")
+    let created_at = json
+        .get("created_at")
         .or_else(|| json.get("createdAt"))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    let title = json.get("title")
+    let title = json
+        .get("title")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    let await_id = json.get("await_id")
+    let await_id = json
+        .get("await_id")
         .or_else(|| json.get("awaitId"))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    let waiters = json.get("waiters")
+    let waiters = json
+        .get("waiters")
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter()
-            .filter_map(|v| v.as_str())
-            .map(|s| s.to_string())
-            .collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| s.to_string())
+                .collect()
+        })
         .unwrap_or_default();
 
     Ok(Gate {
@@ -698,15 +698,16 @@ pub fn parse_duration(s: &str) -> Result<Duration, GateError> {
     }
 
     let (num_str, unit) = if s.ends_with("ms") {
-        (&s[..s.len()-2], "ms")
+        (&s[..s.len() - 2], "ms")
     } else if s.ends_with('s') || s.ends_with('m') || s.ends_with('h') || s.ends_with('d') {
-        (&s[..s.len()-1], &s[s.len()-1..])
+        (&s[..s.len() - 1], &s[s.len() - 1..])
     } else {
         // Assume seconds if no unit
         (s, "s")
     };
 
-    let num: u64 = num_str.parse()
+    let num: u64 = num_str
+        .parse()
         .map_err(|_| GateError::InvalidDuration(s.to_string()))?;
 
     let duration = match unit {
@@ -732,7 +733,10 @@ mod tests {
         assert_eq!(GateType::from_str("HUMAN").unwrap(), GateType::Human);
         assert_eq!(GateType::from_str("timer").unwrap(), GateType::Timer);
         assert_eq!(GateType::from_str("gh:run").unwrap(), GateType::GitHubRun);
-        assert_eq!(GateType::from_str("github-run").unwrap(), GateType::GitHubRun);
+        assert_eq!(
+            GateType::from_str("github-run").unwrap(),
+            GateType::GitHubRun
+        );
         assert_eq!(GateType::from_str("gh:pr").unwrap(), GateType::GitHubPr);
         assert_eq!(GateType::from_str("github-pr").unwrap(), GateType::GitHubPr);
         assert_eq!(GateType::from_str("bead").unwrap(), GateType::Bead);
@@ -755,15 +759,27 @@ mod tests {
 
     #[test]
     fn test_gate_status_from_str() {
-        assert_eq!(GateStatus::from_str("pending").unwrap(), GateStatus::Pending);
+        assert_eq!(
+            GateStatus::from_str("pending").unwrap(),
+            GateStatus::Pending
+        );
         assert_eq!(GateStatus::from_str("open").unwrap(), GateStatus::Pending);
         assert_eq!(GateStatus::from_str("passed").unwrap(), GateStatus::Passed);
-        assert_eq!(GateStatus::from_str("resolved").unwrap(), GateStatus::Passed);
+        assert_eq!(
+            GateStatus::from_str("resolved").unwrap(),
+            GateStatus::Passed
+        );
         assert_eq!(GateStatus::from_str("closed").unwrap(), GateStatus::Passed);
         assert_eq!(GateStatus::from_str("failed").unwrap(), GateStatus::Failed);
         assert_eq!(GateStatus::from_str("failure").unwrap(), GateStatus::Failed);
-        assert_eq!(GateStatus::from_str("expired").unwrap(), GateStatus::Expired);
-        assert_eq!(GateStatus::from_str("timeout").unwrap(), GateStatus::Expired);
+        assert_eq!(
+            GateStatus::from_str("expired").unwrap(),
+            GateStatus::Expired
+        );
+        assert_eq!(
+            GateStatus::from_str("timeout").unwrap(),
+            GateStatus::Expired
+        );
     }
 
     #[test]
@@ -794,16 +810,14 @@ mod tests {
 
     #[test]
     fn test_gate_config_github() {
-        let config = GateConfig::new()
-            .with_github_check("12345");
+        let config = GateConfig::new().with_github_check("12345");
 
         assert_eq!(config.github_check, Some("12345".to_string()));
     }
 
     #[test]
     fn test_gate_config_bead() {
-        let config = GateConfig::new()
-            .with_await_bead("gastown:gt-abc123");
+        let config = GateConfig::new().with_await_bead("gastown:gt-abc123");
 
         assert_eq!(config.await_bead, Some("gastown:gt-abc123".to_string()));
     }

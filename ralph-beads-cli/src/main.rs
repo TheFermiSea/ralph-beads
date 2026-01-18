@@ -7,6 +7,7 @@ mod health;
 mod iterations;
 mod lint;
 mod memory;
+mod merge_slot;
 mod preflight;
 mod security;
 mod state;
@@ -162,6 +163,12 @@ enum Commands {
         #[command(subcommand)]
         action: LintAction,
     },
+
+    /// Merge slot operations for multi-agent serialization (wraps bd merge-slot)
+    MergeSlot {
+        #[command(subcommand)]
+        action: MergeSlotAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -202,6 +209,102 @@ enum LintAction {
         /// Issue ID to check
         issue_id: String,
 
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum MergeSlotAction {
+    /// Acquire the merge slot for exclusive access
+    Acquire {
+        /// Branch context (for future use)
+        #[arg(default_value = "main")]
+        branch: String,
+
+        /// Who is acquiring the slot
+        #[arg(short = 'H', long)]
+        holder: String,
+
+        /// Timeout in seconds for wait mode
+        #[arg(short, long)]
+        timeout: Option<u64>,
+
+        /// Add to waiters list if slot is held
+        #[arg(short, long)]
+        wait: bool,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Release the merge slot after conflict resolution
+    Release {
+        /// Branch context (for future use)
+        #[arg(default_value = "main")]
+        branch: String,
+
+        /// Who is releasing the slot (for verification)
+        #[arg(short = 'H', long)]
+        holder: String,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Check the status of a merge slot
+    Check {
+        /// Branch context (for future use)
+        #[arg(default_value = "main")]
+        branch: String,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Wait for slot to become available and acquire it
+    Wait {
+        /// Branch context (for future use)
+        #[arg(default_value = "main")]
+        branch: String,
+
+        /// Who is acquiring the slot
+        #[arg(short = 'H', long)]
+        holder: String,
+
+        /// Timeout in seconds (default: 300)
+        #[arg(short, long, default_value = "300")]
+        timeout: u64,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Force release a slot (admin operation)
+    ForceRelease {
+        /// Branch context (for future use)
+        #[arg(default_value = "main")]
+        branch: String,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// List all merge slots
+    List {
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Create a merge slot for the current rig
+    Create {
         /// Output format: text or json
         #[arg(short, long, default_value = "text")]
         format: String,
@@ -305,6 +408,93 @@ enum MemoryAction {
         /// Optional epic ID to filter by
         #[arg(short, long)]
         epic_id: Option<String>,
+    },
+
+    /// Rotate the memory log (archive current, start fresh)
+    Rotate {
+        /// Memory log file path
+        #[arg(short, long)]
+        log_file: String,
+
+        /// Max entries before auto-rotation (default: 10000)
+        #[arg(long)]
+        max_entries: Option<usize>,
+
+        /// Max file size in MB before auto-rotation (default: 10)
+        #[arg(long)]
+        max_size: Option<u64>,
+
+        /// Number of archive files to keep (default: 3)
+        #[arg(long)]
+        archives: Option<usize>,
+
+        /// Disable compression for archives
+        #[arg(long)]
+        no_compress: bool,
+
+        /// Force rotation even if thresholds not exceeded
+        #[arg(long)]
+        force: bool,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Prune old entries, keeping only the most recent N
+    Prune {
+        /// Memory log file path
+        #[arg(short, long)]
+        log_file: String,
+
+        /// Number of entries to keep
+        #[arg(short, long)]
+        keep: usize,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Get memory log statistics
+    Stats {
+        /// Memory log file path
+        #[arg(short, long)]
+        log_file: String,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Archive the memory log to a specific path
+    Archive {
+        /// Memory log file path
+        #[arg(short, long)]
+        log_file: String,
+
+        /// Archive destination path
+        #[arg(short, long)]
+        output: String,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Clean up old archive files
+    CleanupArchives {
+        /// Memory log file path
+        #[arg(short, long)]
+        log_file: String,
+
+        /// Number of archive files to keep
+        #[arg(short, long)]
+        keep: usize,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
     },
 }
 
@@ -1080,6 +1270,187 @@ fn main() {
                 let context = memory.compile_context(epic_id.as_deref());
                 println!("{}", context);
             }
+
+            MemoryAction::Rotate {
+                log_file,
+                max_entries,
+                max_size,
+                archives,
+                no_compress,
+                force,
+                format,
+            } => {
+                let mut memory = ProceduralMemory::new(&log_file);
+                let mut config = memory::RotationConfig::new();
+
+                if let Some(entries) = max_entries {
+                    config = config.with_max_entries(entries);
+                }
+                if let Some(size_mb) = max_size {
+                    config = config.with_max_file_size(size_mb * 1024 * 1024);
+                }
+                if let Some(count) = archives {
+                    config = config.with_archive_count(count);
+                }
+                if no_compress {
+                    config = config.with_compress(false);
+                }
+
+                let result = if force {
+                    memory.force_rotate(&config)
+                } else {
+                    memory.rotate_if_needed(&config)
+                };
+
+                match result {
+                    Ok(r) => {
+                        if format == "json" {
+                            println!("{}", serde_json::to_string_pretty(&r).unwrap());
+                        } else if r.rotated {
+                            println!("Rotated: {} entries archived", r.entries_archived);
+                            println!("New file size: {} bytes", r.new_file_size);
+                            if r.archives_pruned > 0 {
+                                println!("Archives pruned: {}", r.archives_pruned);
+                            }
+                        } else {
+                            println!("No rotation needed (thresholds not exceeded)");
+                        }
+                    }
+                    Err(e) => {
+                        if format == "json" {
+                            let result = json!({
+                                "success": false,
+                                "error": e.to_string()
+                            });
+                            println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                        } else {
+                            eprintln!("Error rotating log: {}", e);
+                        }
+                        std::process::exit(1);
+                    }
+                }
+            }
+
+            MemoryAction::Prune {
+                log_file,
+                keep,
+                format,
+            } => {
+                let mut memory = ProceduralMemory::new(&log_file);
+                match memory.prune_old_entries(keep) {
+                    Ok(pruned) => {
+                        if format == "json" {
+                            let result = json!({
+                                "success": true,
+                                "entries_pruned": pruned,
+                                "entries_kept": keep
+                            });
+                            println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                        } else {
+                            println!("Pruned {} entries, kept {}", pruned, keep);
+                        }
+                    }
+                    Err(e) => {
+                        if format == "json" {
+                            let result = json!({
+                                "success": false,
+                                "error": e.to_string()
+                            });
+                            println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                        } else {
+                            eprintln!("Error pruning log: {}", e);
+                        }
+                        std::process::exit(1);
+                    }
+                }
+            }
+
+            MemoryAction::Stats { log_file, format } => {
+                let memory = ProceduralMemory::new(&log_file);
+                let stats = memory.get_log_stats();
+                if format == "json" {
+                    println!("{}", serde_json::to_string_pretty(&stats).unwrap());
+                } else {
+                    println!("Log Statistics:");
+                    println!("  File size: {} bytes", stats.file_size);
+                    println!("  Entry count: {}", stats.entry_count);
+                    if let Some(oldest) = &stats.oldest_entry {
+                        println!("  Oldest entry: {}", oldest);
+                    }
+                    if let Some(newest) = &stats.newest_entry {
+                        println!("  Newest entry: {}", newest);
+                    }
+                    println!("  Archive count: {}", stats.archive_count);
+                    println!("  Total archive size: {} bytes", stats.total_archive_size);
+                }
+            }
+
+            MemoryAction::Archive {
+                log_file,
+                output,
+                format,
+            } => {
+                let memory = ProceduralMemory::new(&log_file);
+                match memory.archive_log(&output) {
+                    Ok(()) => {
+                        if format == "json" {
+                            let result = json!({
+                                "success": true,
+                                "archive_path": output
+                            });
+                            println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                        } else {
+                            println!("Archived to: {}", output);
+                        }
+                    }
+                    Err(e) => {
+                        if format == "json" {
+                            let result = json!({
+                                "success": false,
+                                "error": e.to_string()
+                            });
+                            println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                        } else {
+                            eprintln!("Error archiving log: {}", e);
+                        }
+                        std::process::exit(1);
+                    }
+                }
+            }
+
+            MemoryAction::CleanupArchives {
+                log_file,
+                keep,
+                format,
+            } => {
+                let memory = ProceduralMemory::new(&log_file);
+                match memory.cleanup_archives(keep) {
+                    Ok(removed) => {
+                        if format == "json" {
+                            let result = json!({
+                                "success": true,
+                                "archives_removed": removed,
+                                "archives_kept": keep
+                            });
+                            println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                        } else {
+                            println!("Removed {} archive(s), kept {}", removed, keep);
+                        }
+                    }
+                    Err(e) => {
+                        if format == "json" {
+                            let result = json!({
+                                "success": false,
+                                "error": e.to_string()
+                            });
+                            println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                        } else {
+                            eprintln!("Error cleaning up archives: {}", e);
+                        }
+                        std::process::exit(1);
+                    }
+                }
+            }
         },
 
         Commands::BeadsState { action } => match action {
@@ -1405,37 +1776,35 @@ fn main() {
                     std::process::exit(1);
                 }
             },
-            WorktreeAction::Status { name_or_path, format } => {
-                match worktree::get_worktree_status(&name_or_path) {
-                    Ok(status) => {
-                        if format == "json" {
-                            println!("{}", serde_json::to_string_pretty(&status).unwrap());
-                        } else {
-                            println!("Worktree: {}", name_or_path);
-                            println!("Path: {}", status.path);
-                            println!("Branch: {}", status.branch);
-                            println!("Clean: {}", status.is_clean);
-                            if status.is_detached {
-                                println!("HEAD is detached");
-                            }
+            WorktreeAction::Status {
+                name_or_path,
+                format,
+            } => match worktree::get_worktree_status(&name_or_path) {
+                Ok(status) => {
+                    if format == "json" {
+                        println!("{}", serde_json::to_string_pretty(&status).unwrap());
+                    } else {
+                        println!("Worktree: {}", name_or_path);
+                        println!("Path: {}", status.path);
+                        println!("Branch: {}", status.branch);
+                        println!("Clean: {}", status.is_clean);
+                        if status.is_detached {
+                            println!("HEAD is detached");
                         }
                     }
-                    Err(e) => {
-                        eprintln!("Error getting worktree status: {}", e);
-                        std::process::exit(1);
-                    }
                 }
-            }
+                Err(e) => {
+                    eprintln!("Error getting worktree status: {}", e);
+                    std::process::exit(1);
+                }
+            },
             WorktreeAction::Info { format } => match worktree::get_current_worktree_info() {
                 Ok(info) => {
                     if format == "json" {
                         println!("{}", serde_json::to_string_pretty(&info).unwrap());
                     } else {
                         if info.is_worktree {
-                            println!(
-                                "Path: {}",
-                                info.path.as_deref().unwrap_or("unknown")
-                            );
+                            println!("Path: {}", info.path.as_deref().unwrap_or("unknown"));
                             println!("Name: {}", info.name.as_deref().unwrap_or("unknown"));
                             println!("Branch: {}", info.branch.as_deref().unwrap_or("unknown"));
                             println!(
@@ -2031,7 +2400,11 @@ fn main() {
                     if format == "json" {
                         println!("{}", serde_json::to_string_pretty(&validation).unwrap());
                     } else {
-                        let status = if validation.is_valid { "VALID" } else { "INVALID" };
+                        let status = if validation.is_valid {
+                            "VALID"
+                        } else {
+                            "INVALID"
+                        };
                         println!("Epic {}: {}", epic_id, status);
                         println!("  Ready fronts: {}", validation.ready_fronts);
                         println!("  Estimated sessions: {}", validation.estimated_sessions);
@@ -2214,6 +2587,253 @@ fn main() {
                     }
                 }
             }
+        },
+
+        Commands::MergeSlot { action } => match action {
+            MergeSlotAction::Acquire {
+                branch,
+                holder,
+                timeout,
+                wait,
+                format,
+            } => {
+                let config = merge_slot::SlotConfig::new()
+                    .with_branch(&branch)
+                    .with_wait(wait);
+
+                // If timeout provided, use wait_for_slot instead
+                if let Some(timeout_secs) = timeout {
+                    match merge_slot::wait_for_slot(&branch, &holder, timeout_secs) {
+                        Ok(slot) => {
+                            if format == "json" {
+                                println!("{}", serde_json::to_string_pretty(&slot).unwrap());
+                            } else {
+                                println!("Acquired slot: {}", slot.slot_id);
+                                println!("Holder: {}", holder);
+                            }
+                        }
+                        Err(e) => {
+                            if format == "json" {
+                                let result = json!({
+                                    "success": false,
+                                    "error": e.to_string()
+                                });
+                                println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                            } else {
+                                eprintln!("Error acquiring slot: {}", e);
+                            }
+                            std::process::exit(1);
+                        }
+                    }
+                } else {
+                    match merge_slot::acquire_slot(&branch, &holder, config) {
+                        Ok(slot) => {
+                            if format == "json" {
+                                println!("{}", serde_json::to_string_pretty(&slot).unwrap());
+                            } else {
+                                println!("Acquired slot: {}", slot.slot_id);
+                                println!("Holder: {}", holder);
+                            }
+                        }
+                        Err(e) => {
+                            if format == "json" {
+                                let result = json!({
+                                    "success": false,
+                                    "error": e.to_string()
+                                });
+                                println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                            } else {
+                                eprintln!("Error acquiring slot: {}", e);
+                            }
+                            std::process::exit(1);
+                        }
+                    }
+                }
+            }
+
+            MergeSlotAction::Release {
+                branch,
+                holder,
+                format,
+            } => match merge_slot::release_slot(&branch, &holder) {
+                Ok(()) => {
+                    if format == "json" {
+                        let result = json!({
+                            "success": true,
+                            "action": "released",
+                            "holder": holder
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        println!("Released slot (holder: {})", holder);
+                    }
+                }
+                Err(e) => {
+                    if format == "json" {
+                        let result = json!({
+                            "success": false,
+                            "error": e.to_string()
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        eprintln!("Error releasing slot: {}", e);
+                    }
+                    std::process::exit(1);
+                }
+            },
+
+            MergeSlotAction::Check { branch, format } => match merge_slot::check_slot(&branch) {
+                Ok(slot) => {
+                    if format == "json" {
+                        println!("{}", serde_json::to_string_pretty(&slot).unwrap());
+                    } else {
+                        println!("Status: {}", slot.status);
+                        if let Some(holder) = &slot.holder {
+                            println!("Holder: {}", holder);
+                        }
+                        if let Some(acquired_at) = &slot.acquired_at {
+                            println!("Acquired at: {}", acquired_at);
+                        }
+                        if !slot.waiters.is_empty() {
+                            println!("Waiters: {}", slot.waiters.join(", "));
+                        }
+                    }
+                }
+                Err(merge_slot::MergeSlotError::NotFound) => {
+                    if format == "json" {
+                        let result = json!({
+                            "status": "not_found",
+                            "message": "No merge slot exists for this rig"
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        println!("No merge slot exists for this rig");
+                        println!("Create one with: ralph-beads-cli merge-slot create");
+                    }
+                }
+                Err(e) => {
+                    if format == "json" {
+                        let result = json!({
+                            "success": false,
+                            "error": e.to_string()
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        eprintln!("Error checking slot: {}", e);
+                    }
+                    std::process::exit(1);
+                }
+            },
+
+            MergeSlotAction::Wait {
+                branch,
+                holder,
+                timeout,
+                format,
+            } => match merge_slot::wait_for_slot(&branch, &holder, timeout) {
+                Ok(slot) => {
+                    if format == "json" {
+                        println!("{}", serde_json::to_string_pretty(&slot).unwrap());
+                    } else {
+                        println!("Acquired slot: {}", slot.slot_id);
+                        println!("Holder: {}", holder);
+                    }
+                }
+                Err(e) => {
+                    if format == "json" {
+                        let result = json!({
+                            "success": false,
+                            "error": e.to_string()
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        eprintln!("Error waiting for slot: {}", e);
+                    }
+                    std::process::exit(1);
+                }
+            },
+
+            MergeSlotAction::ForceRelease { branch, format } => {
+                match merge_slot::force_release(&branch) {
+                    Ok(()) => {
+                        if format == "json" {
+                            let result = json!({
+                                "success": true,
+                                "action": "force_released"
+                            });
+                            println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                        } else {
+                            println!("Force released slot");
+                        }
+                    }
+                    Err(e) => {
+                        if format == "json" {
+                            let result = json!({
+                                "success": false,
+                                "error": e.to_string()
+                            });
+                            println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                        } else {
+                            eprintln!("Error force releasing slot: {}", e);
+                        }
+                        std::process::exit(1);
+                    }
+                }
+            }
+
+            MergeSlotAction::List { format } => match merge_slot::list_slots() {
+                Ok(slots) => {
+                    if format == "json" {
+                        println!("{}", serde_json::to_string_pretty(&slots).unwrap());
+                    } else if slots.is_empty() {
+                        println!("No merge slots found");
+                    } else {
+                        for slot in &slots {
+                            println!(
+                                "{}: {} (holder: {})",
+                                slot.slot_id,
+                                slot.status,
+                                slot.holder.as_deref().unwrap_or("-")
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    if format == "json" {
+                        let result = json!({
+                            "success": false,
+                            "error": e.to_string()
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        eprintln!("Error listing slots: {}", e);
+                    }
+                    std::process::exit(1);
+                }
+            },
+
+            MergeSlotAction::Create { format } => match merge_slot::create_slot() {
+                Ok(slot) => {
+                    if format == "json" {
+                        println!("{}", serde_json::to_string_pretty(&slot).unwrap());
+                    } else {
+                        println!("Created merge slot: {}", slot.slot_id);
+                        println!("Status: {}", slot.status);
+                    }
+                }
+                Err(e) => {
+                    if format == "json" {
+                        let result = json!({
+                            "success": false,
+                            "error": e.to_string()
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        eprintln!("Error creating slot: {}", e);
+                    }
+                    std::process::exit(1);
+                }
+            },
         },
     }
 }

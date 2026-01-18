@@ -509,7 +509,10 @@ fn parse_text_lint_output(output: &str, issue_id: &str) -> Result<Vec<LintResult
 
             if !section.is_empty() {
                 let (rule, severity) = section_to_rule_and_severity(&section, None);
-                let message = format!("Issue {} is missing required section: {}", issue_id, section);
+                let message = format!(
+                    "Issue {} is missing required section: {}",
+                    issue_id, section
+                );
                 let result = LintResult::new(issue_id, rule, severity, &message);
                 let suggestion = suggest_fix(&result);
                 let result = result.with_suggestion(&suggestion);

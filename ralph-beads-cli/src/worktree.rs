@@ -180,7 +180,11 @@ pub struct CurrentWorktreeInfo {
 /// let info = create_worktree("feature-auth", "feature-auth", "./feature-auth")?;
 /// println!("Created worktree at: {}", info.path);
 /// ```
-pub fn create_worktree(name: &str, branch: &str, _path: &str) -> Result<WorktreeInfo, WorktreeError> {
+pub fn create_worktree(
+    name: &str,
+    branch: &str,
+    _path: &str,
+) -> Result<WorktreeInfo, WorktreeError> {
     let branch_arg = format!("--branch={}", branch);
     let args = vec!["worktree", "create", name, &branch_arg, "--json"];
 
@@ -392,7 +396,9 @@ pub fn get_current_worktree_info() -> Result<CurrentWorktreeInfo, WorktreeError>
     if !response.is_worktree {
         // Get current directory info
         let pwd_output = Command::new("pwd").output()?;
-        let path = String::from_utf8_lossy(&pwd_output.stdout).trim().to_string();
+        let path = String::from_utf8_lossy(&pwd_output.stdout)
+            .trim()
+            .to_string();
 
         // Get the directory name as the worktree name
         let name = std::path::Path::new(&path)

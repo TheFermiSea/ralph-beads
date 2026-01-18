@@ -146,9 +146,18 @@ impl PreflightReport {
     /// Create a report from a list of checks
     pub fn from_checks(checks: Vec<PreflightCheck>) -> Self {
         let total = checks.len();
-        let passed_count = checks.iter().filter(|c| c.status == CheckStatus::Passed).count();
-        let failed_count = checks.iter().filter(|c| c.status == CheckStatus::Failed).count();
-        let skipped_count = checks.iter().filter(|c| c.status == CheckStatus::Skipped).count();
+        let passed_count = checks
+            .iter()
+            .filter(|c| c.status == CheckStatus::Passed)
+            .count();
+        let failed_count = checks
+            .iter()
+            .filter(|c| c.status == CheckStatus::Failed)
+            .count();
+        let skipped_count = checks
+            .iter()
+            .filter(|c| c.status == CheckStatus::Skipped)
+            .count();
 
         let passed = failed_count == 0;
 
@@ -164,11 +173,7 @@ impl PreflightReport {
                 format!("{}/{} checks passed", passed_count, total)
             }
         } else {
-            format!(
-                "{}/{} checks failed",
-                failed_count,
-                total - skipped_count
-            )
+            format!("{}/{} checks failed", failed_count, total - skipped_count)
         };
 
         Self {
@@ -265,7 +270,11 @@ pub fn run_preflight(_issue_id: Option<&str>) -> Result<PreflightReport, Preflig
     if output.status.success() {
         Ok(PreflightReport {
             passed: true,
-            checks: vec![PreflightCheck::passed("preflight", Some("Preflight completed"), duration)],
+            checks: vec![PreflightCheck::passed(
+                "preflight",
+                Some("Preflight completed"),
+                duration,
+            )],
             summary: "Preflight checks passed".to_string(),
             total: 1,
             passed_count: 1,
@@ -308,7 +317,11 @@ pub fn check_tests() -> Result<PreflightCheck, PreflightError> {
 
     // First try to get it from bd preflight
     if let Ok(report) = run_preflight(None) {
-        if let Some(check) = report.checks.iter().find(|c| c.name.to_lowercase().contains("test")) {
+        if let Some(check) = report
+            .checks
+            .iter()
+            .find(|c| c.name.to_lowercase().contains("test"))
+        {
             return Ok(check.clone());
         }
     }
@@ -318,13 +331,13 @@ pub fn check_tests() -> Result<PreflightCheck, PreflightError> {
 
     // Detect project type and run appropriate test command
     if std::path::Path::new("Cargo.toml").exists() {
-        let output = Command::new("cargo")
-            .args(["test", "--no-run"])
-            .output()?;
+        let output = Command::new("cargo").args(["test", "--no-run"]).output()?;
 
         if output.status.success() {
-            Ok(PreflightCheck::passed("tests", Some("Cargo tests compile"), duration)
-                .with_command("cargo test --no-run"))
+            Ok(
+                PreflightCheck::passed("tests", Some("Cargo tests compile"), duration)
+                    .with_command("cargo test --no-run"),
+            )
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
             Ok(PreflightCheck::failed("tests", &stderr, duration)
@@ -336,12 +349,13 @@ pub fn check_tests() -> Result<PreflightCheck, PreflightError> {
             .output()?;
 
         if output.status.success() {
-            Ok(PreflightCheck::passed("tests", Some("npm tests pass"), duration)
-                .with_command("npm test"))
+            Ok(
+                PreflightCheck::passed("tests", Some("npm tests pass"), duration)
+                    .with_command("npm test"),
+            )
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            Ok(PreflightCheck::failed("tests", &stderr, duration)
-                .with_command("npm test"))
+            Ok(PreflightCheck::failed("tests", &stderr, duration).with_command("npm test"))
         }
     } else if std::path::Path::new("pyproject.toml").exists() {
         let output = Command::new("pytest")
@@ -349,15 +363,20 @@ pub fn check_tests() -> Result<PreflightCheck, PreflightError> {
             .output()?;
 
         if output.status.success() {
-            Ok(PreflightCheck::passed("tests", Some("pytest tests collected"), duration)
-                .with_command("pytest --collect-only"))
+            Ok(
+                PreflightCheck::passed("tests", Some("pytest tests collected"), duration)
+                    .with_command("pytest --collect-only"),
+            )
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
             Ok(PreflightCheck::failed("tests", &stderr, duration)
                 .with_command("pytest --collect-only"))
         }
     } else {
-        Ok(PreflightCheck::skipped("tests", "No recognized test framework found"))
+        Ok(PreflightCheck::skipped(
+            "tests",
+            "No recognized test framework found",
+        ))
     }
 }
 
@@ -370,7 +389,11 @@ pub fn check_lint() -> Result<PreflightCheck, PreflightError> {
 
     // First try to get it from bd preflight
     if let Ok(report) = run_preflight(None) {
-        if let Some(check) = report.checks.iter().find(|c| c.name.to_lowercase().contains("lint")) {
+        if let Some(check) = report
+            .checks
+            .iter()
+            .find(|c| c.name.to_lowercase().contains("lint"))
+        {
             return Ok(check.clone());
         }
     }
@@ -384,8 +407,10 @@ pub fn check_lint() -> Result<PreflightCheck, PreflightError> {
             .output()?;
 
         if output.status.success() {
-            Ok(PreflightCheck::passed("lint", Some("Clippy passes"), duration)
-                .with_command("cargo clippy -- -D warnings"))
+            Ok(
+                PreflightCheck::passed("lint", Some("Clippy passes"), duration)
+                    .with_command("cargo clippy -- -D warnings"),
+            )
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
             Ok(PreflightCheck::failed("lint", &stderr, duration)
@@ -398,8 +423,10 @@ pub fn check_lint() -> Result<PreflightCheck, PreflightError> {
             .output()?;
 
         if output.status.success() {
-            Ok(PreflightCheck::passed("lint", Some("ESLint passes"), duration)
-                .with_command("npx eslint . --max-warnings=0"))
+            Ok(
+                PreflightCheck::passed("lint", Some("ESLint passes"), duration)
+                    .with_command("npx eslint . --max-warnings=0"),
+            )
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
@@ -408,20 +435,22 @@ pub fn check_lint() -> Result<PreflightCheck, PreflightError> {
                 .with_command("npx eslint . --max-warnings=0"))
         }
     } else if std::path::Path::new("pyproject.toml").exists() {
-        let output = Command::new("ruff")
-            .args(["check", "."])
-            .output()?;
+        let output = Command::new("ruff").args(["check", "."]).output()?;
 
         if output.status.success() {
-            Ok(PreflightCheck::passed("lint", Some("Ruff passes"), duration)
-                .with_command("ruff check ."))
+            Ok(
+                PreflightCheck::passed("lint", Some("Ruff passes"), duration)
+                    .with_command("ruff check ."),
+            )
         } else {
             let stdout = String::from_utf8_lossy(&output.stdout);
-            Ok(PreflightCheck::failed("lint", &stdout, duration)
-                .with_command("ruff check ."))
+            Ok(PreflightCheck::failed("lint", &stdout, duration).with_command("ruff check ."))
         }
     } else {
-        Ok(PreflightCheck::skipped("lint", "No recognized linter found"))
+        Ok(PreflightCheck::skipped(
+            "lint",
+            "No recognized linter found",
+        ))
     }
 }
 
@@ -432,47 +461,54 @@ pub fn check_build() -> Result<PreflightCheck, PreflightError> {
     let start = Instant::now();
 
     if std::path::Path::new("Cargo.toml").exists() {
-        let output = Command::new("cargo")
-            .args(["build"])
-            .output()?;
+        let output = Command::new("cargo").args(["build"]).output()?;
 
         let duration = start.elapsed().as_millis() as u64;
 
         if output.status.success() {
-            Ok(PreflightCheck::passed("build", Some("Cargo build succeeds"), duration)
-                .with_command("cargo build"))
+            Ok(
+                PreflightCheck::passed("build", Some("Cargo build succeeds"), duration)
+                    .with_command("cargo build"),
+            )
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            Ok(PreflightCheck::failed("build", &stderr, duration)
-                .with_command("cargo build"))
+            Ok(PreflightCheck::failed("build", &stderr, duration).with_command("cargo build"))
         }
     } else if std::path::Path::new("package.json").exists() {
-        let output = Command::new("npm")
-            .args(["run", "build"])
-            .output()?;
+        let output = Command::new("npm").args(["run", "build"]).output()?;
 
         let duration = start.elapsed().as_millis() as u64;
 
         if output.status.success() {
-            Ok(PreflightCheck::passed("build", Some("npm build succeeds"), duration)
-                .with_command("npm run build"))
+            Ok(
+                PreflightCheck::passed("build", Some("npm build succeeds"), duration)
+                    .with_command("npm run build"),
+            )
         } else {
             // Check if build script exists
             let stderr = String::from_utf8_lossy(&output.stderr);
             if stderr.contains("missing script: build") {
-                Ok(PreflightCheck::skipped("build", "No build script in package.json"))
+                Ok(PreflightCheck::skipped(
+                    "build",
+                    "No build script in package.json",
+                ))
             } else {
-                Ok(PreflightCheck::failed("build", &stderr, duration)
-                    .with_command("npm run build"))
+                Ok(
+                    PreflightCheck::failed("build", &stderr, duration)
+                        .with_command("npm run build"),
+                )
             }
         }
     } else {
         let duration = start.elapsed().as_millis() as u64;
-        Ok(PreflightCheck::skipped("build", "No recognized build system found").with_command("N/A"))
-            .map(|mut c| {
-                c.duration_ms = duration;
-                c
-            })
+        Ok(
+            PreflightCheck::skipped("build", "No recognized build system found")
+                .with_command("N/A"),
+        )
+        .map(|mut c| {
+            c.duration_ms = duration;
+            c
+        })
     }
 }
 
@@ -489,24 +525,20 @@ pub fn check_uncommitted() -> Result<PreflightCheck, PreflightError> {
     let duration = start.elapsed().as_millis() as u64;
 
     if !output.status.success() {
-        return Ok(PreflightCheck::failed(
-            "uncommitted",
-            "Failed to check git status",
-            duration,
-        )
-        .with_command("git status --porcelain"));
+        return Ok(
+            PreflightCheck::failed("uncommitted", "Failed to check git status", duration)
+                .with_command("git status --porcelain"),
+        );
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let changes: Vec<&str> = stdout.lines().collect();
 
     if changes.is_empty() {
-        Ok(PreflightCheck::passed(
-            "uncommitted",
-            Some("Working tree is clean"),
-            duration,
+        Ok(
+            PreflightCheck::passed("uncommitted", Some("Working tree is clean"), duration)
+                .with_command("git status --porcelain"),
         )
-        .with_command("git status --porcelain"))
     } else {
         let change_count = changes.len();
         if change_count <= 5 {
@@ -521,7 +553,10 @@ pub fn check_uncommitted() -> Result<PreflightCheck, PreflightError> {
             // Many changes, probably should commit first
             Ok(PreflightCheck::failed(
                 "uncommitted",
-                &format!("{} uncommitted changes - consider committing first", change_count),
+                &format!(
+                    "{} uncommitted changes - consider committing first",
+                    change_count
+                ),
                 duration,
             )
             .with_command("git status --porcelain"))
