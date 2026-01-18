@@ -126,24 +126,15 @@ impl HealthReport {
             HealthStatus::Healthy => "All health checks passed".to_string(),
             HealthStatus::Warning => format!(
                 "{} warning(s) found, can proceed with caution",
-                checks
-                    .iter()
-                    .filter(|c| c.status == HealthStatus::Warning)
-                    .count()
+                checks.iter().filter(|c| c.status == HealthStatus::Warning).count()
             ),
             HealthStatus::Degraded => format!(
                 "{} issue(s) found that should be addressed",
-                checks
-                    .iter()
-                    .filter(|c| c.status == HealthStatus::Degraded)
-                    .count()
+                checks.iter().filter(|c| c.status == HealthStatus::Degraded).count()
             ),
             HealthStatus::Critical => format!(
                 "{} critical issue(s) - cannot proceed",
-                checks
-                    .iter()
-                    .filter(|c| c.status == HealthStatus::Critical)
-                    .count()
+                checks.iter().filter(|c| c.status == HealthStatus::Critical).count()
             ),
         };
 
@@ -221,7 +212,11 @@ impl HealthChecker {
             Ok(out) if out.status.success() => {
                 CheckResult::healthy("git", "Git repository detected")
             }
-            _ => CheckResult::critical("git", "Not a git repository", "Initialize with: git init"),
+            _ => CheckResult::critical(
+                "git",
+                "Not a git repository",
+                "Initialize with: git init",
+            ),
         }
     }
 
@@ -401,7 +396,11 @@ impl HealthChecker {
         // Check if node_modules exists
         let node_modules = Path::new(&self.project_dir).join("node_modules");
         if !node_modules.exists() {
-            return CheckResult::warning("node", "node_modules not found", "Run: npm install");
+            return CheckResult::warning(
+                "node",
+                "node_modules not found",
+                "Run: npm install",
+            );
         }
 
         CheckResult::healthy("node", "Node.js environment ready")
@@ -437,7 +436,9 @@ impl HealthChecker {
         // Simple heuristic - try to get disk space
         #[cfg(unix)]
         {
-            let output = Command::new("df").args(["-h", &self.project_dir]).output();
+            let output = Command::new("df")
+                .args(["-h", &self.project_dir])
+                .output();
 
             if let Ok(out) = output {
                 let stdout = String::from_utf8_lossy(&out.stdout);
@@ -466,10 +467,7 @@ impl HealthChecker {
     /// Check if ralph-beads-cli is available
     fn check_rust_cli(&self) -> CheckResult {
         if command_exists("ralph-beads-cli") {
-            CheckResult::healthy(
-                "ralph_cli",
-                "ralph-beads-cli is available (Rust acceleration)",
-            )
+            CheckResult::healthy("ralph_cli", "ralph-beads-cli is available (Rust acceleration)")
         } else {
             CheckResult::warning(
                 "ralph_cli",

@@ -267,12 +267,7 @@ impl ProceduralMemory {
     ///
     /// Estimates ~500 bytes per entry average, seeks near end, and reads forward.
     /// Falls back to full read if estimation is off.
-    fn load_entries_optimized(
-        &self,
-        file: &File,
-        file_size: u64,
-        limit: usize,
-    ) -> Vec<MemoryEntry> {
+    fn load_entries_optimized(&self, file: &File, file_size: u64, limit: usize) -> Vec<MemoryEntry> {
         // Estimate: average entry ~500 bytes, seek to get ~2x limit entries
         let estimated_bytes_needed = (limit * 2 * 500) as u64;
         let seek_position = file_size.saturating_sub(estimated_bytes_needed);
@@ -344,9 +339,10 @@ impl ProceduralMemory {
 
     /// Check if a task has previous failures
     pub fn has_failures(&self, task_id: &str) -> bool {
-        self.recent
-            .iter()
-            .any(|e| e.memory_type == MemoryType::Failure && e.task_id.as_deref() == Some(task_id))
+        self.recent.iter().any(|e| {
+            e.memory_type == MemoryType::Failure
+                && e.task_id.as_deref() == Some(task_id)
+        })
     }
 
     /// Count failures for a task
@@ -354,7 +350,8 @@ impl ProceduralMemory {
         self.recent
             .iter()
             .filter(|e| {
-                e.memory_type == MemoryType::Failure && e.task_id.as_deref() == Some(task_id)
+                e.memory_type == MemoryType::Failure
+                    && e.task_id.as_deref() == Some(task_id)
             })
             .count() as u32
     }
@@ -364,7 +361,8 @@ impl ProceduralMemory {
         self.recent
             .iter()
             .filter(|e| {
-                e.memory_type == MemoryType::Failure && e.task_id.as_deref() == Some(task_id)
+                e.memory_type == MemoryType::Failure
+                    && e.task_id.as_deref() == Some(task_id)
             })
             .collect()
     }
@@ -419,11 +417,7 @@ impl ProceduralMemory {
         if !failures.is_empty() {
             context.push_str("## Recent Failures\n");
             for f in failures.iter().take(5) {
-                context.push_str(&format!(
-                    "- {}: {}\n",
-                    f.task_id.as_deref().unwrap_or("?"),
-                    f.summary
-                ));
+                context.push_str(&format!("- {}: {}\n", f.task_id.as_deref().unwrap_or("?"), f.summary));
                 if let Some(err) = &f.error {
                     context.push_str(&format!("  Error: {}\n", truncate(err, 100)));
                 }
@@ -464,13 +458,17 @@ impl ProceduralMemory {
 
 fn generate_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let duration = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap();
     format!("mem-{:x}", duration.as_micros())
 }
 
 fn current_timestamp() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let duration = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap();
     // Simple ISO-like timestamp
     format!("{}", duration.as_secs())
 }
@@ -520,9 +518,7 @@ fn extract_error_pattern(error: &str) -> String {
 fn suggest_for_pattern(pattern: &str) -> String {
     match pattern {
         "resource_not_found" => "Verify path/ID exists before accessing".to_string(),
-        "permission_denied" => {
-            "Check file permissions or run with appropriate privileges".to_string()
-        }
+        "permission_denied" => "Check file permissions or run with appropriate privileges".to_string(),
         "timeout" => "Increase timeout or check network connectivity".to_string(),
         "connection_refused" => "Verify service is running and port is correct".to_string(),
         "syntax_error" => "Check for missing brackets, semicolons, or typos".to_string(),
