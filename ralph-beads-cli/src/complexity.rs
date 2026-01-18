@@ -1,7 +1,10 @@
+use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
+
+use crate::state::WorkflowMode;
 
 /// Task complexity levels that determine iteration counts and validation requirements
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -70,26 +73,24 @@ struct ComplexityPatterns {
     critical: Regex,
 }
 
-impl ComplexityPatterns {
-    fn new() -> Self {
-        Self {
-            // TRIVIAL patterns: typo fixes, comments, whitespace, spelling, renaming
-            trivial: Regex::new(
-                r"(?i)(fix\s+typo|update\s+comment|rename|spelling|whitespace|typo|correct\s+spelling|documentation\s+fix|docstring)"
-            ).expect("Invalid trivial regex"),
+/// Lazily compiled regex patterns for complexity detection
+/// Compiled once on first use, then reused for all subsequent calls
+static PATTERNS: Lazy<ComplexityPatterns> = Lazy::new(|| ComplexityPatterns {
+    // TRIVIAL patterns: typo fixes, comments, whitespace, spelling, renaming
+    trivial: Regex::new(
+        r"(?i)(fix\s+typo|update\s+comment|rename|spelling|whitespace|typo|correct\s+spelling|documentation\s+fix|docstring)"
+    ).expect("Invalid trivial regex"),
 
-            // SIMPLE patterns: toggles, flags, removing unused, version updates
-            simple: Regex::new(
-                r"(?i)(add\s+(button|toggle|flag)|toggle|remove\s+unused|update\s+(version|dep)|bump\s+version|add\s+const|remove\s+dead\s+code|unused\s+import)"
-            ).expect("Invalid simple regex"),
+    // SIMPLE patterns: toggles, flags, removing unused, version updates
+    simple: Regex::new(
+        r"(?i)(add\s+(button|toggle|flag)|toggle|remove\s+unused|update\s+(version|dep)|bump\s+version|add\s+const|remove\s+dead\s+code|unused\s+import)"
+    ).expect("Invalid simple regex"),
 
-            // CRITICAL patterns: auth, security, payments, credentials, encryption
-            critical: Regex::new(
-                r"(?i)(auth|security|payment|migration|credential|token|encrypt|password|secret|api\s*key|oauth|jwt|session|permission|role|access\s*control|vulnerability|injection|xss|csrf|sanitiz)"
-            ).expect("Invalid critical regex"),
-        }
-    }
-}
+    // CRITICAL patterns: auth, security, payments, credentials, encryption
+    critical: Regex::new(
+        r"(?i)(auth|security|payment|migration|credential|token|encrypt|password|secret|api\s*key|oauth|jwt|session|permission|role|access\s*control|vulnerability|injection|xss|csrf|sanitiz)"
+    ).expect("Invalid critical regex"),
+});
 
 /// Detect complexity level from task description
 ///
@@ -107,7 +108,8 @@ impl ComplexityPatterns {
 /// assert_eq!(detect_complexity("Add user profile page"), Complexity::Standard);
 /// ```
 pub fn detect_complexity(task: &str) -> Complexity {
-    let patterns = ComplexityPatterns::new();
+    // Use lazily-compiled patterns (compiled once on first call)
+    let patterns = &*PATTERNS;
 
     // Check patterns in order of specificity (critical > simple > trivial)
     // Critical patterns override others due to security importance
@@ -127,6 +129,85 @@ pub fn detect_complexity(task: &str) -> Complexity {
 
     // Default to standard for everything else
     Complexity::Standard
+}
+
+// ============================================================================
+// Iteration Calculation (merged from iterations.rs)
+// ============================================================================
+
+/// Default iterations for planning mode by complexity
+const PLANNING_ITERATIONS: [(Complexity, u32); 4] = [
+    (Complexity::Trivial, 2),
+    (Complexity::Simple, 3),
+    (Complexity::Standard, 5),
+    (Complexity::Critical, 8),
+];
+
+/// Default iterations for building mode by complexity
+const BUILDING_ITERATIONS: [(Complexity, u32); 4] = [
+    (Complexity::Trivial, 5),
+    (Complexity::Simple, 10),
+    (Complexity::Standard, 20),
+    (Complexity::Critical, 40),
+];
+
+/// Calculate the maximum number of iterations based on workflow mode and complexity
+///
+/// # Arguments
+/// * `mode` - The current workflow mode (planning or building)
+/// * `complexity` - The detected or specified complexity level
+///
+/// # Returns
+/// The recommended maximum number of iterations
+///
+/// # Iteration Scaling Table
+///
+/// | Complexity | Planning | Building | Validation     |
+/// |------------|----------|----------|----------------|
+/// | Trivial    | 2        | 5        | Skip           |
+/// | Simple     | 3        | 10       | Skip           |
+/// | Standard   | 5        | 20       | Auto-enable    |
+/// | Critical   | 8        | 40       | Required       |
+pub fn calculate_max_iterations(mode: &WorkflowMode, complexity: &Complexity) -> u32 {
+    match mode {
+        WorkflowMode::Planning => {
+            for (cx, iter) in &PLANNING_ITERATIONS {
+                if cx == complexity {
+                    return *iter;
+                }
+            }
+            5 // default for planning
+        }
+        WorkflowMode::Building => {
+            for (cx, iter) in &BUILDING_ITERATIONS {
+                if cx == complexity {
+                    return *iter;
+                }
+            }
+            20 // default for building
+        }
+        // Paused and Complete don't need iteration calculations
+        WorkflowMode::Paused | WorkflowMode::Complete => 0,
+    }
+}
+
+/// Get iteration limits for a complexity level
+///
+/// Returns (planning_iterations, building_iterations)
+pub fn get_iteration_limits(complexity: &Complexity) -> (u32, u32) {
+    let planning = PLANNING_ITERATIONS
+        .iter()
+        .find(|(cx, _)| cx == complexity)
+        .map(|(_, iter)| *iter)
+        .unwrap_or(5);
+
+    let building = BUILDING_ITERATIONS
+        .iter()
+        .find(|(cx, _)| cx == complexity)
+        .map(|(_, iter)| *iter)
+        .unwrap_or(20);
+
+    (planning, building)
 }
 
 #[cfg(test)]
@@ -269,5 +350,67 @@ mod tests {
         assert!(Complexity::Simple.can_skip_validation());
         assert!(Complexity::Standard.can_skip_validation());
         assert!(!Complexity::Critical.can_skip_validation());
+    }
+
+    // Iteration tests (merged from iterations.rs)
+
+    #[test]
+    fn test_planning_iterations() {
+        assert_eq!(
+            calculate_max_iterations(&WorkflowMode::Planning, &Complexity::Trivial),
+            2
+        );
+        assert_eq!(
+            calculate_max_iterations(&WorkflowMode::Planning, &Complexity::Simple),
+            3
+        );
+        assert_eq!(
+            calculate_max_iterations(&WorkflowMode::Planning, &Complexity::Standard),
+            5
+        );
+        assert_eq!(
+            calculate_max_iterations(&WorkflowMode::Planning, &Complexity::Critical),
+            8
+        );
+    }
+
+    #[test]
+    fn test_building_iterations() {
+        assert_eq!(
+            calculate_max_iterations(&WorkflowMode::Building, &Complexity::Trivial),
+            5
+        );
+        assert_eq!(
+            calculate_max_iterations(&WorkflowMode::Building, &Complexity::Simple),
+            10
+        );
+        assert_eq!(
+            calculate_max_iterations(&WorkflowMode::Building, &Complexity::Standard),
+            20
+        );
+        assert_eq!(
+            calculate_max_iterations(&WorkflowMode::Building, &Complexity::Critical),
+            40
+        );
+    }
+
+    #[test]
+    fn test_paused_and_complete_return_zero() {
+        assert_eq!(
+            calculate_max_iterations(&WorkflowMode::Paused, &Complexity::Standard),
+            0
+        );
+        assert_eq!(
+            calculate_max_iterations(&WorkflowMode::Complete, &Complexity::Standard),
+            0
+        );
+    }
+
+    #[test]
+    fn test_get_iteration_limits() {
+        assert_eq!(get_iteration_limits(&Complexity::Trivial), (2, 5));
+        assert_eq!(get_iteration_limits(&Complexity::Simple), (3, 10));
+        assert_eq!(get_iteration_limits(&Complexity::Standard), (5, 20));
+        assert_eq!(get_iteration_limits(&Complexity::Critical), (8, 40));
     }
 }

@@ -3,10 +3,10 @@
  *
  * This module provides a type-safe interface to the Rust CLI binary,
  * enabling high-performance complexity detection, framework detection,
- * iteration calculation, and state management.
+ * and iteration calculation.
  */
 
-import { Complexity, SessionState, WorkflowMode } from "./types";
+import { Complexity, WorkflowMode } from "./types";
 
 /**
  * Configuration for the Rust CLI client
@@ -38,14 +38,6 @@ export interface FrameworkResult {
  */
 export interface IterationResult {
   max_iterations: number;
-}
-
-/**
- * Result from should-continue check
- */
-export interface ContinuationResult {
-  should_continue: boolean;
-  reason: string;
 }
 
 /**
@@ -132,101 +124,6 @@ export class RustClient {
       .$`${this.binaryPath} calc-iterations --mode ${mode} --complexity ${complexity} --format json`.quiet();
     const result = this.parseJsonOutput<IterationResult>(output);
     return parseInt(result.max_iterations.toString(), 10);
-  }
-
-  /**
-   * Create a new session state
-   *
-   * @param sessionId - Unique session identifier
-   * @param options - Additional state options
-   * @returns New session state
-   */
-  async createState(
-    sessionId: string,
-    options?: {
-      mode?: WorkflowMode;
-      epicId?: string;
-      moleculeId?: string;
-      complexity?: Complexity;
-      maxIterations?: number;
-    }
-  ): Promise<SessionState> {
-    const args = ["state", "new", "--session-id", sessionId];
-
-    if (options?.mode) {
-      args.push("--mode", options.mode);
-    }
-    if (options?.epicId) {
-      args.push("--epic-id", options.epicId);
-    }
-    if (options?.moleculeId) {
-      args.push("--mol-id", options.moleculeId);
-    }
-    if (options?.complexity) {
-      args.push("--complexity", options.complexity);
-    }
-    if (options?.maxIterations) {
-      args.push("--max-iterations", options.maxIterations.toString());
-    }
-
-    const output = await this.$`${this.binaryPath} ${args}`.quiet();
-    return this.parseJsonOutput<SessionState>(output);
-  }
-
-  /**
-   * Load state from JSON
-   *
-   * @param json - JSON string representing state
-   * @returns Parsed session state
-   */
-  async loadState(json: string): Promise<SessionState> {
-    const output = await this.$`${this.binaryPath} state load ${json}`.quiet();
-    return this.parseJsonOutput<SessionState>(output);
-  }
-
-  /**
-   * Update a field in the state
-   *
-   * @param state - Current state as JSON
-   * @param field - Field name to update
-   * @param value - New value
-   * @returns Updated session state
-   */
-  async updateState(
-    state: SessionState,
-    field: string,
-    value: string
-  ): Promise<SessionState> {
-    const stateJson = JSON.stringify(state);
-    const output = await this
-      .$`${this.binaryPath} state update --state ${stateJson} --field ${field} --value ${value}`.quiet();
-    return this.parseJsonOutput<SessionState>(output);
-  }
-
-  /**
-   * Check if loop should continue
-   *
-   * @param state - Current session state
-   * @returns Whether to continue and reason
-   */
-  async shouldContinue(state: SessionState): Promise<ContinuationResult> {
-    const stateJson = JSON.stringify(state);
-    const output = await this
-      .$`${this.binaryPath} state should-continue --state ${stateJson}`.quiet();
-    return this.parseJsonOutput<ContinuationResult>(output);
-  }
-
-  /**
-   * Get CLI version and capabilities
-   */
-  async getInfo(): Promise<{
-    version: string;
-    capabilities: string[];
-    complexity_levels: string[];
-    workflow_modes: string[];
-  }> {
-    const output = await this.$`${this.binaryPath} info --format json`.quiet();
-    return this.parseJsonOutput(output);
   }
 }
 
