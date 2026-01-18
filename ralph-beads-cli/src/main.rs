@@ -5,10 +5,12 @@ mod framework;
 mod gates;
 mod health;
 mod iterations;
+mod lint;
 mod memory;
 mod preflight;
 mod security;
 mod state;
+mod swarm;
 mod worktree;
 
 use clap::{Parser, Subcommand};
@@ -147,6 +149,62 @@ enum Commands {
     Gate {
         #[command(subcommand)]
         action: GateAction,
+    },
+
+    /// Swarm operations for parallel epic execution (wraps bd swarm)
+    Swarm {
+        #[command(subcommand)]
+        action: SwarmAction,
+    },
+
+    /// Lint operations for issue quality checks (wraps bd lint)
+    Lint {
+        #[command(subcommand)]
+        action: LintAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum LintAction {
+    /// Lint a single issue by ID
+    Issue {
+        /// Issue ID to lint
+        issue_id: String,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Lint an epic and all its children
+    Epic {
+        /// Epic ID to lint
+        epic_id: String,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Lint all open issues in the project
+    All {
+        /// Minimum severity to report: error, warning, or all
+        #[arg(short, long, default_value = "all")]
+        severity: String,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Check if an issue has acceptance criteria
+    CheckAc {
+        /// Issue ID to check
+        issue_id: String,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
     },
 }
 
@@ -539,6 +597,136 @@ enum GateAction {
         /// Waiter address (e.g., "rig/polecats/Name")
         waiter: String,
 
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum SwarmAction {
+    /// Start a new swarm for parallel epic execution
+    Start {
+        /// Epic ID to orchestrate
+        epic_id: String,
+
+        /// Maximum number of workers
+        #[arg(short, long, default_value = "4")]
+        workers: usize,
+
+        /// Coordinator address (e.g., "gastown/witness")
+        #[arg(short, long)]
+        coordinator: Option<String>,
+
+        /// Force creation even if swarm already exists
+        #[arg(long)]
+        force: bool,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Join an existing swarm as a worker
+    Join {
+        /// Epic ID of the swarm to join
+        epic_id: String,
+
+        /// Worker ID for this agent
+        #[arg(short, long)]
+        worker: String,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Get status of a swarm
+    Status {
+        /// Epic ID or swarm molecule ID
+        epic_id: String,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Stop a swarm
+    Stop {
+        /// Epic ID of the swarm to stop
+        epic_id: String,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Claim the next available task from a swarm
+    Claim {
+        /// Epic ID of the swarm
+        epic_id: String,
+
+        /// Worker ID claiming the task
+        #[arg(short, long)]
+        worker: String,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Report task completion
+    Complete {
+        /// Epic ID of the swarm
+        epic_id: String,
+
+        /// Task ID that was completed
+        #[arg(short, long)]
+        task: String,
+
+        /// Worker ID that completed the task
+        #[arg(short, long)]
+        worker: String,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Report task failure
+    Failed {
+        /// Epic ID of the swarm
+        epic_id: String,
+
+        /// Task ID that failed
+        #[arg(short, long)]
+        task: String,
+
+        /// Worker ID that encountered the failure
+        #[arg(short, long)]
+        worker: String,
+
+        /// Reason for failure
+        #[arg(short, long)]
+        reason: String,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// Validate an epic's structure for swarm execution
+    Validate {
+        /// Epic ID to validate
+        epic_id: String,
+
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
+    /// List all active swarms
+    List {
         /// Output format: text or json
         #[arg(short, long, default_value = "text")]
         format: String,
@@ -1576,6 +1764,489 @@ fn main() {
                 }
             },
         },
+
+        Commands::Swarm { action } => match action {
+            SwarmAction::Start {
+                epic_id,
+                workers,
+                coordinator,
+                force,
+                format,
+            } => {
+                let mut config = swarm::SwarmConfig::new(&epic_id)
+                    .with_max_workers(workers)
+                    .with_force(force);
+
+                if let Some(coord) = coordinator {
+                    config = config.with_coordinator(&coord);
+                }
+
+                match swarm::start_swarm(config) {
+                    Ok(state) => {
+                        if format == "json" {
+                            println!("{}", serde_json::to_string_pretty(&state).unwrap());
+                        } else {
+                            println!("Started swarm for epic: {}", epic_id);
+                            println!(
+                                "Tasks: {} total, {} ready",
+                                state.tasks_total, state.tasks_ready
+                            );
+                            if let Some(swarm_id) = &state.swarm_id {
+                                println!("Swarm ID: {}", swarm_id);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        if format == "json" {
+                            let result = json!({
+                                "success": false,
+                                "epic_id": epic_id,
+                                "error": e.to_string()
+                            });
+                            println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                        } else {
+                            eprintln!("Error starting swarm: {}", e);
+                        }
+                        std::process::exit(1);
+                    }
+                }
+            }
+
+            SwarmAction::Join {
+                epic_id,
+                worker,
+                format,
+            } => match swarm::join_swarm(&epic_id, &worker) {
+                Ok(()) => {
+                    if format == "json" {
+                        let result = json!({
+                            "success": true,
+                            "epic_id": epic_id,
+                            "worker_id": worker,
+                            "action": "joined"
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        println!("Joined swarm {} as worker {}", epic_id, worker);
+                    }
+                }
+                Err(e) => {
+                    if format == "json" {
+                        let result = json!({
+                            "success": false,
+                            "epic_id": epic_id,
+                            "error": e.to_string()
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        eprintln!("Error joining swarm: {}", e);
+                    }
+                    std::process::exit(1);
+                }
+            },
+
+            SwarmAction::Status { epic_id, format } => match swarm::get_swarm_status(&epic_id) {
+                Ok(state) => {
+                    if format == "json" {
+                        println!("{}", serde_json::to_string_pretty(&state).unwrap());
+                    } else {
+                        println!("Swarm Status: {}", state.status);
+                        println!("Epic: {}", state.epic_id);
+                        println!(
+                            "Progress: {:.1}% ({}/{} tasks)",
+                            state.progress_percent, state.tasks_completed, state.tasks_total
+                        );
+                        println!(
+                            "  In Progress: {}, Ready: {}, Blocked: {}",
+                            state.tasks_in_progress, state.tasks_ready, state.tasks_blocked
+                        );
+                        if !state.active_workers.is_empty() {
+                            println!("Active Workers: {}", state.active_workers.join(", "));
+                        }
+                    }
+                }
+                Err(e) => {
+                    if format == "json" {
+                        let result = json!({
+                            "epic_id": epic_id,
+                            "error": e.to_string()
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        eprintln!("Error getting swarm status: {}", e);
+                    }
+                    std::process::exit(1);
+                }
+            },
+
+            SwarmAction::Stop { epic_id, format } => match swarm::stop_swarm(&epic_id) {
+                Ok(()) => {
+                    if format == "json" {
+                        let result = json!({
+                            "success": true,
+                            "epic_id": epic_id,
+                            "action": "stopped"
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        println!("Stopped swarm: {}", epic_id);
+                    }
+                }
+                Err(e) => {
+                    if format == "json" {
+                        let result = json!({
+                            "success": false,
+                            "epic_id": epic_id,
+                            "error": e.to_string()
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        eprintln!("Error stopping swarm: {}", e);
+                    }
+                    std::process::exit(1);
+                }
+            },
+
+            SwarmAction::Claim {
+                epic_id,
+                worker,
+                format,
+            } => match swarm::claim_next_task(&epic_id, &worker) {
+                Ok(Some(task_id)) => {
+                    if format == "json" {
+                        let result = json!({
+                            "success": true,
+                            "epic_id": epic_id,
+                            "worker_id": worker,
+                            "task_id": task_id
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        println!("Claimed task: {}", task_id);
+                    }
+                }
+                Ok(None) => {
+                    if format == "json" {
+                        let result = json!({
+                            "success": true,
+                            "epic_id": epic_id,
+                            "worker_id": worker,
+                            "task_id": null,
+                            "message": "No tasks available"
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        println!("No tasks available to claim");
+                    }
+                }
+                Err(e) => {
+                    if format == "json" {
+                        let result = json!({
+                            "success": false,
+                            "epic_id": epic_id,
+                            "error": e.to_string()
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        eprintln!("Error claiming task: {}", e);
+                    }
+                    std::process::exit(1);
+                }
+            },
+
+            SwarmAction::Complete {
+                epic_id,
+                task,
+                worker,
+                format,
+            } => match swarm::report_task_complete(&epic_id, &task, &worker) {
+                Ok(()) => {
+                    if format == "json" {
+                        let result = json!({
+                            "success": true,
+                            "epic_id": epic_id,
+                            "task_id": task,
+                            "worker_id": worker,
+                            "action": "completed"
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        println!("Completed task: {}", task);
+                    }
+                }
+                Err(e) => {
+                    if format == "json" {
+                        let result = json!({
+                            "success": false,
+                            "task_id": task,
+                            "error": e.to_string()
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        eprintln!("Error reporting completion: {}", e);
+                    }
+                    std::process::exit(1);
+                }
+            },
+
+            SwarmAction::Failed {
+                epic_id,
+                task,
+                worker,
+                reason,
+                format,
+            } => match swarm::report_task_failed(&epic_id, &task, &worker, &reason) {
+                Ok(()) => {
+                    if format == "json" {
+                        let result = json!({
+                            "success": true,
+                            "epic_id": epic_id,
+                            "task_id": task,
+                            "worker_id": worker,
+                            "action": "failed",
+                            "reason": reason
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        println!("Reported failure for task: {}", task);
+                    }
+                }
+                Err(e) => {
+                    if format == "json" {
+                        let result = json!({
+                            "success": false,
+                            "task_id": task,
+                            "error": e.to_string()
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        eprintln!("Error reporting failure: {}", e);
+                    }
+                    std::process::exit(1);
+                }
+            },
+
+            SwarmAction::Validate { epic_id, format } => match swarm::validate_epic(&epic_id) {
+                Ok(validation) => {
+                    if format == "json" {
+                        println!("{}", serde_json::to_string_pretty(&validation).unwrap());
+                    } else {
+                        let status = if validation.is_valid { "VALID" } else { "INVALID" };
+                        println!("Epic {}: {}", epic_id, status);
+                        println!("  Ready fronts: {}", validation.ready_fronts);
+                        println!("  Estimated sessions: {}", validation.estimated_sessions);
+                        println!("  Max parallelism: {}", validation.max_parallelism);
+
+                        if !validation.warnings.is_empty() {
+                            println!("\nWarnings:");
+                            for warning in &validation.warnings {
+                                println!("  - {}", warning);
+                            }
+                        }
+
+                        if !validation.errors.is_empty() {
+                            println!("\nErrors:");
+                            for error in &validation.errors {
+                                println!("  - {}", error);
+                            }
+                        }
+                    }
+
+                    if !validation.is_valid {
+                        std::process::exit(1);
+                    }
+                }
+                Err(e) => {
+                    if format == "json" {
+                        let result = json!({
+                            "epic_id": epic_id,
+                            "error": e.to_string()
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        eprintln!("Error validating epic: {}", e);
+                    }
+                    std::process::exit(1);
+                }
+            },
+
+            SwarmAction::List { format } => match swarm::list_swarms() {
+                Ok(swarms) => {
+                    if format == "json" {
+                        println!("{}", serde_json::to_string_pretty(&swarms).unwrap());
+                    } else if swarms.is_empty() {
+                        println!("No active swarms");
+                    } else {
+                        for s in &swarms {
+                            println!(
+                                "{}: {} - {:.1}% ({}/{})",
+                                s.epic_id,
+                                s.status,
+                                s.progress_percent,
+                                s.tasks_completed,
+                                s.tasks_total
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    if format == "json" {
+                        let result = json!({
+                            "error": e.to_string()
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        eprintln!("Error listing swarms: {}", e);
+                    }
+                    std::process::exit(1);
+                }
+            },
+        },
+
+        Commands::Lint { action } => match action {
+            LintAction::Issue { issue_id, format } => match lint::lint_issue(&issue_id) {
+                Ok(results) => {
+                    let report = lint::LintReport::from_results(results);
+                    output_lint_report(&report, &format);
+                    if !report.passed {
+                        std::process::exit(1);
+                    }
+                }
+                Err(e) => {
+                    if format == "json" {
+                        let result = json!({
+                            "success": false,
+                            "issue_id": issue_id,
+                            "error": e.to_string()
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        eprintln!("Error linting issue: {}", e);
+                    }
+                    std::process::exit(1);
+                }
+            },
+
+            LintAction::Epic { epic_id, format } => match lint::lint_epic(&epic_id) {
+                Ok(report) => {
+                    output_lint_report(&report, &format);
+                    if !report.passed {
+                        std::process::exit(1);
+                    }
+                }
+                Err(e) => {
+                    if format == "json" {
+                        let result = json!({
+                            "success": false,
+                            "epic_id": epic_id,
+                            "error": e.to_string()
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        eprintln!("Error linting epic: {}", e);
+                    }
+                    std::process::exit(1);
+                }
+            },
+
+            LintAction::All { severity, format } => match lint::lint_all() {
+                Ok(mut report) => {
+                    // Filter by severity if specified
+                    if severity != "all" {
+                        let min_severity = match severity.to_lowercase().as_str() {
+                            "error" => lint::LintSeverity::Error,
+                            "warning" => lint::LintSeverity::Warning,
+                            _ => lint::LintSeverity::Info,
+                        };
+                        report.results = lint::filter_by_severity(report.results, min_severity);
+                        // Recalculate counts
+                        report = lint::LintReport::from_results(report.results);
+                    }
+
+                    output_lint_report(&report, &format);
+                    if !report.passed {
+                        std::process::exit(1);
+                    }
+                }
+                Err(e) => {
+                    if format == "json" {
+                        let result = json!({
+                            "success": false,
+                            "error": e.to_string()
+                        });
+                        println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                    } else {
+                        eprintln!("Error linting all issues: {}", e);
+                    }
+                    std::process::exit(1);
+                }
+            },
+
+            LintAction::CheckAc { issue_id, format } => {
+                match lint::check_acceptance_criteria(&issue_id) {
+                    Ok(has_ac) => {
+                        if format == "json" {
+                            let result = json!({
+                                "success": true,
+                                "issue_id": issue_id,
+                                "has_acceptance_criteria": has_ac
+                            });
+                            println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                        } else if has_ac {
+                            println!("[PASS] Issue {} has acceptance criteria", issue_id);
+                        } else {
+                            println!("[FAIL] Issue {} is missing acceptance criteria", issue_id);
+                            std::process::exit(1);
+                        }
+                    }
+                    Err(e) => {
+                        if format == "json" {
+                            let result = json!({
+                                "success": false,
+                                "issue_id": issue_id,
+                                "error": e.to_string()
+                            });
+                            println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                        } else {
+                            eprintln!("Error checking acceptance criteria: {}", e);
+                        }
+                        std::process::exit(1);
+                    }
+                }
+            }
+        },
+    }
+}
+
+fn output_lint_report(report: &lint::LintReport, format: &str) {
+    if format == "json" {
+        println!("{}", serde_json::to_string_pretty(report).unwrap());
+    } else {
+        let overall_icon = if report.passed { "[PASS]" } else { "[FAIL]" };
+        println!("{} Lint: {}", overall_icon, report.summary);
+        println!();
+
+        if report.results.is_empty() {
+            println!("  No issues found");
+        } else {
+            for result in &report.results {
+                let icon = match result.severity {
+                    lint::LintSeverity::Error => "[ERROR]",
+                    lint::LintSeverity::Warning => "[WARN]",
+                    lint::LintSeverity::Info => "[INFO]",
+                };
+                println!("  {} {} - {}", icon, result.issue_id, result.message);
+                if let Some(suggestion) = &result.suggestion {
+                    // Truncate long suggestions
+                    let truncated = if suggestion.len() > 100 {
+                        format!("{}...", &suggestion[..100])
+                    } else {
+                        suggestion.clone()
+                    };
+                    println!("      Suggestion: {}", truncated);
+                }
+            }
+        }
     }
 }
 

