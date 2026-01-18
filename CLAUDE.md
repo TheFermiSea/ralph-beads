@@ -315,6 +315,27 @@ Ensure `--epic <id>` is provided for resume, or create new with `/ralph-beads --
 ### Loop doesn't stop
 The completion promise must be output exactly: `<promise>DONE</promise>` or `<promise>PLAN_READY</promise>`.
 
+### bd sync deletes files (CRITICAL)
+**Bug**: `bd sync` uses a worktree that can become stale, causing it to delete legitimate files.
+
+**Workaround**: Use the safe-sync wrapper:
+```bash
+./scripts/safe-sync.sh
+```
+
+Or manually reset the worktree before syncing:
+```bash
+cd .git/beads-worktrees/main && git reset --hard HEAD && cd -
+bd sync
+```
+
+Or commit beads changes manually (avoiding bd sync):
+```bash
+git add .beads/issues.jsonl
+git commit -m "bd sync: <description>"
+git push
+```
+
 ## Plugin Development Guidelines
 
 **Reference:** https://code.claude.com/docs/en/plugins-reference
