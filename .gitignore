@@ -20,6 +20,15 @@ test-output/
 # Build artifacts
 dist/
 build/
+target/
+
+# Rust (ralph-beads-cli)
+ralph-beads-cli/target/
+ralph-beads-cli/src/target/
+
+# Beads internal files (not synced to git)
+.beads/.sync.lock
+.beads/sync_base.jsonl
 
 # Node (if using any JS tooling)
 node_modules/
