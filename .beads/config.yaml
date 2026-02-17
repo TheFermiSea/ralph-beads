@@ -23,10 +23,11 @@
 # no-auto-import: false
 
 # Enable JSON output by default
-# json: false
+json: true
+events-export: true
 
 # Default actor for audit trails (overridden by BD_ACTOR or --actor)
-# actor: ""
+actor: "claude-code"
 
 # Path to database (overridden by BEADS_DB or --db)
 # db: ""
@@ -42,7 +43,7 @@
 # This setting persists across clones (unlike database config which is gitignored).
 # Can also use BEADS_SYNC_BRANCH env var for local override.
 # If not set, bd sync will require you to run 'bd config set sync.branch <branch>'.
-sync-branch: "main"
+sync-branch: "beads-sync"
 
 # Multi-repo configuration (experimental - bd-307)
 # Allows hydrating from multiple repositories and routing writes to the correct JSONL
